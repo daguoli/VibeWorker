@@ -70,6 +70,9 @@ export default function SettingsDialog() {
         embedding_api_key: "",
         embedding_api_base: "",
         embedding_model: "",
+        translate_api_key: "",
+        translate_api_base: "",
+        translate_model: "",
     });
 
     useEffect(() => {
@@ -118,7 +121,7 @@ export default function SettingsDialog() {
                         模型配置
                     </DialogTitle>
                     <DialogDescription>
-                        配置 LLM 和 Embedding 模型的连接参数。保存后需重启后端生效。
+                        配置主模型、Embedding 和翻译模型的连接参数。保存后需重启后端生效。
                     </DialogDescription>
                 </DialogHeader>
 
@@ -196,6 +199,36 @@ export default function SettingsDialog() {
                                     value={form.embedding_model}
                                     onChange={(v) => updateField("embedding_model", v)}
                                     placeholder="text-embedding-3-small"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Translation Model Section */}
+                        <div className="space-y-3">
+                            <h4 className="text-xs font-semibold text-foreground/80 uppercase tracking-wider flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                                翻译模型
+                                <span className="text-[10px] font-normal text-muted-foreground normal-case">（可选，留空则复用主模型）</span>
+                            </h4>
+                            <div className="grid gap-3 pl-3.5">
+                                <SettingsField
+                                    label="API Key"
+                                    value={form.translate_api_key}
+                                    onChange={(v) => updateField("translate_api_key", v)}
+                                    placeholder="留空复用 LLM Key"
+                                    secret
+                                />
+                                <SettingsField
+                                    label="API Base URL"
+                                    value={form.translate_api_base}
+                                    onChange={(v) => updateField("translate_api_base", v)}
+                                    placeholder="留空复用 LLM Base"
+                                />
+                                <SettingsField
+                                    label="模型名称"
+                                    value={form.translate_model}
+                                    onChange={(v) => updateField("translate_model", v)}
+                                    placeholder="留空复用 LLM 模型（如 gpt-4o-mini）"
                                 />
                             </div>
                         </div>

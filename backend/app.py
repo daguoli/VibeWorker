@@ -508,10 +508,15 @@ async def translate_content(request: TranslateRequest):
         raise HTTPException(status_code=400, detail="Content cannot be empty")
 
     try:
+        # Use translation model config if set, otherwise fall back to main LLM config
+        api_key = settings.translate_api_key or settings.llm_api_key
+        api_base = settings.translate_api_base or settings.llm_api_base
+        model = settings.translate_model or settings.llm_model
+
         llm = ChatOpenAI(
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_api_base,
-            model=settings.llm_model,
+            api_key=api_key,
+            base_url=api_base,
+            model=model,
             temperature=0.2,
         )
 
@@ -592,6 +597,10 @@ class SettingsUpdateRequest(BaseModel):
     embedding_api_key: Optional[str] = None
     embedding_api_base: Optional[str] = None
     embedding_model: Optional[str] = None
+    # Translation model (optional, falls back to main LLM if not set)
+    translate_api_key: Optional[str] = None
+    translate_api_base: Optional[str] = None
+    translate_model: Optional[str] = None
 
 
 def _read_env_file() -> dict:
@@ -650,6 +659,10 @@ async def get_settings():
         "embedding_api_key": env.get("EMBEDDING_API_KEY", ""),
         "embedding_api_base": env.get("EMBEDDING_API_BASE", ""),
         "embedding_model": env.get("EMBEDDING_MODEL", ""),
+        # Translation model config
+        "translate_api_key": env.get("TRANSLATE_API_KEY", ""),
+        "translate_api_base": env.get("TRANSLATE_API_BASE", ""),
+        "translate_model": env.get("TRANSLATE_MODEL", ""),
     }
 
 
@@ -666,6 +679,10 @@ async def update_settings(request: SettingsUpdateRequest):
         "EMBEDDING_API_KEY": request.embedding_api_key,
         "EMBEDDING_API_BASE": request.embedding_api_base,
         "EMBEDDING_MODEL": request.embedding_model,
+        # Translation model
+        "TRANSLATE_API_KEY": request.translate_api_key,
+        "TRANSLATE_API_BASE": request.translate_api_base,
+        "TRANSLATE_MODEL": request.translate_model,
     }
     for env_key, value in update_map.items():
         if value is not None:

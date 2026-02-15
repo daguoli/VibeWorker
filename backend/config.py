@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     embedding_api_base: Optional[str] = Field(default=None)
     embedding_model: str = Field(default="text-embedding-3-small")
 
+    # Translation Model Configuration (uses main LLM config if not set)
+    translate_api_key: Optional[str] = Field(default=None)
+    translate_api_base: Optional[str] = Field(default=None)
+    translate_model: Optional[str] = Field(default=None)
+
     # Paths
     memory_dir: Path = PROJECT_ROOT / "memory"
     sessions_dir: Path = PROJECT_ROOT / "sessions"

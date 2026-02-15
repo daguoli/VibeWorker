@@ -218,6 +218,10 @@ export interface SettingsData {
   embedding_api_key: string;
   embedding_api_base: string;
   embedding_model: string;
+  // Translation model (optional, falls back to main LLM if not set)
+  translate_api_key: string;
+  translate_api_base: string;
+  translate_model: string;
 }
 
 export async function fetchSettings(): Promise<SettingsData> {
