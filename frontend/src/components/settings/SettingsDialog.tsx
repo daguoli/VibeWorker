@@ -12,6 +12,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fetchSettings, updateSettings, type SettingsData } from "@/lib/api";
 
 function SettingsField({
@@ -60,7 +61,6 @@ export default function SettingsDialog() {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [saved, setSaved] = useState(false);
     const [form, setForm] = useState<SettingsData>({
         openai_api_key: "",
         openai_api_base: "",
@@ -78,7 +78,6 @@ export default function SettingsDialog() {
     useEffect(() => {
         if (open) {
             setLoading(true);
-            setSaved(false);
             fetchSettings()
                 .then((data) => setForm(data))
                 .catch(() => { })
@@ -121,7 +120,7 @@ export default function SettingsDialog() {
                         模型配置
                     </DialogTitle>
                     <DialogDescription>
-                        配置主模型、Embedding 和翻译模型的连接参数。保存后需重启后端生效。
+                        配置主模型、Embedding 和翻译模型。保存后需重启后端生效。
                     </DialogDescription>
                 </DialogHeader>
 
@@ -130,117 +129,114 @@ export default function SettingsDialog() {
                         <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                     </div>
                 ) : (
-                    <div className="space-y-5 py-2">
-                        {/* LLM Section */}
-                        <div className="space-y-3">
-                            <h4 className="text-xs font-semibold text-foreground/80 uppercase tracking-wider flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                                LLM 模型
-                            </h4>
-                            <div className="grid gap-3 pl-3.5">
-                                <SettingsField
-                                    label="API Key"
-                                    value={form.openai_api_key}
-                                    onChange={(v) => updateField("openai_api_key", v)}
-                                    placeholder="sk-..."
-                                    secret
-                                />
-                                <SettingsField
-                                    label="API Base URL"
-                                    value={form.openai_api_base}
-                                    onChange={(v) => updateField("openai_api_base", v)}
-                                    placeholder="https://api.openai.com/v1"
-                                />
-                                <SettingsField
-                                    label="模型名称"
-                                    value={form.llm_model}
-                                    onChange={(v) => updateField("llm_model", v)}
-                                    placeholder="gpt-4o"
-                                />
-                                <div className="grid grid-cols-2 gap-3">
-                                    <SettingsField
-                                        label="Temperature"
-                                        value={String(form.llm_temperature)}
-                                        onChange={(v) => updateField("llm_temperature", parseFloat(v) || 0)}
-                                        type="number"
-                                    />
-                                    <SettingsField
-                                        label="Max Tokens"
-                                        value={String(form.llm_max_tokens)}
-                                        onChange={(v) => updateField("llm_max_tokens", parseInt(v) || 4096)}
-                                        type="number"
-                                    />
-                                </div>
-                            </div>
-                        </div>
+                    <Tabs defaultValue="llm" className="w-full">
+                        <TabsList className="grid w-full grid-cols-3 mb-4">
+                            <TabsTrigger value="llm" className="text-xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5" />
+                                主模型
+                            </TabsTrigger>
+                            <TabsTrigger value="embedding" className="text-xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5" />
+                                Embedding
+                            </TabsTrigger>
+                            <TabsTrigger value="translate" className="text-xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-orange-500 mr-1.5" />
+                                翻译
+                            </TabsTrigger>
+                        </TabsList>
 
-                        {/* Embedding Section */}
-                        <div className="space-y-3">
-                            <h4 className="text-xs font-semibold text-foreground/80 uppercase tracking-wider flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                Embedding 模型
-                            </h4>
-                            <div className="grid gap-3 pl-3.5">
+                        {/* LLM Tab */}
+                        <TabsContent value="llm" className="space-y-3 mt-0">
+                            <SettingsField
+                                label="API Key"
+                                value={form.openai_api_key}
+                                onChange={(v) => updateField("openai_api_key", v)}
+                                placeholder="sk-..."
+                                secret
+                            />
+                            <SettingsField
+                                label="API Base URL"
+                                value={form.openai_api_base}
+                                onChange={(v) => updateField("openai_api_base", v)}
+                                placeholder="https://api.openai.com/v1"
+                            />
+                            <SettingsField
+                                label="模型名称"
+                                value={form.llm_model}
+                                onChange={(v) => updateField("llm_model", v)}
+                                placeholder="gpt-4o"
+                            />
+                            <div className="grid grid-cols-2 gap-3">
                                 <SettingsField
-                                    label="API Key（留空则复用 LLM）"
-                                    value={form.embedding_api_key}
-                                    onChange={(v) => updateField("embedding_api_key", v)}
-                                    placeholder="留空复用 LLM Key"
-                                    secret
+                                    label="Temperature"
+                                    value={String(form.llm_temperature)}
+                                    onChange={(v) => updateField("llm_temperature", parseFloat(v) || 0)}
+                                    type="number"
                                 />
                                 <SettingsField
-                                    label="API Base URL（留空则复用 LLM）"
-                                    value={form.embedding_api_base}
-                                    onChange={(v) => updateField("embedding_api_base", v)}
-                                    placeholder="留空复用 LLM Base"
-                                />
-                                <SettingsField
-                                    label="模型名称"
-                                    value={form.embedding_model}
-                                    onChange={(v) => updateField("embedding_model", v)}
-                                    placeholder="text-embedding-3-small"
+                                    label="Max Tokens"
+                                    value={String(form.llm_max_tokens)}
+                                    onChange={(v) => updateField("llm_max_tokens", parseInt(v) || 4096)}
+                                    type="number"
                                 />
                             </div>
-                        </div>
+                        </TabsContent>
 
-                        {/* Translation Model Section */}
-                        <div className="space-y-3">
-                            <h4 className="text-xs font-semibold text-foreground/80 uppercase tracking-wider flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-                                翻译模型
-                                <span className="text-[10px] font-normal text-muted-foreground normal-case">（可选，留空则复用主模型）</span>
-                            </h4>
-                            <div className="grid gap-3 pl-3.5">
-                                <SettingsField
-                                    label="API Key"
-                                    value={form.translate_api_key}
-                                    onChange={(v) => updateField("translate_api_key", v)}
-                                    placeholder="留空复用 LLM Key"
-                                    secret
-                                />
-                                <SettingsField
-                                    label="API Base URL"
-                                    value={form.translate_api_base}
-                                    onChange={(v) => updateField("translate_api_base", v)}
-                                    placeholder="留空复用 LLM Base"
-                                />
-                                <SettingsField
-                                    label="模型名称"
-                                    value={form.translate_model}
-                                    onChange={(v) => updateField("translate_model", v)}
-                                    placeholder="留空复用 LLM 模型（如 gpt-4o-mini）"
-                                />
-                            </div>
-                        </div>
-                    </div>
+                        {/* Embedding Tab */}
+                        <TabsContent value="embedding" className="space-y-3 mt-0">
+                            <p className="text-xs text-muted-foreground mb-3">
+                                留空则自动复用主模型的 API 配置
+                            </p>
+                            <SettingsField
+                                label="API Key"
+                                value={form.embedding_api_key}
+                                onChange={(v) => updateField("embedding_api_key", v)}
+                                placeholder="留空复用主模型"
+                                secret
+                            />
+                            <SettingsField
+                                label="API Base URL"
+                                value={form.embedding_api_base}
+                                onChange={(v) => updateField("embedding_api_base", v)}
+                                placeholder="留空复用主模型"
+                            />
+                            <SettingsField
+                                label="模型名称"
+                                value={form.embedding_model}
+                                onChange={(v) => updateField("embedding_model", v)}
+                                placeholder="text-embedding-3-small"
+                            />
+                        </TabsContent>
+
+                        {/* Translate Tab */}
+                        <TabsContent value="translate" className="space-y-3 mt-0">
+                            <p className="text-xs text-muted-foreground mb-3">
+                                留空则自动复用主模型，可配置更轻量的模型用于翻译
+                            </p>
+                            <SettingsField
+                                label="API Key"
+                                value={form.translate_api_key}
+                                onChange={(v) => updateField("translate_api_key", v)}
+                                placeholder="留空复用主模型"
+                                secret
+                            />
+                            <SettingsField
+                                label="API Base URL"
+                                value={form.translate_api_base}
+                                onChange={(v) => updateField("translate_api_base", v)}
+                                placeholder="留空复用主模型"
+                            />
+                            <SettingsField
+                                label="模型名称"
+                                value={form.translate_model}
+                                onChange={(v) => updateField("translate_model", v)}
+                                placeholder="gpt-4o-mini"
+                            />
+                        </TabsContent>
+                    </Tabs>
                 )}
 
                 <DialogFooter>
-                    {saved && (
-                        <span className="text-xs text-emerald-600 mr-auto flex items-center gap-1">
-                            ✓ 已保存，重启后端生效
-                        </span>
-                    )}
                     <Button
                         onClick={handleSave}
                         disabled={saving || loading}
