@@ -1,0 +1,418 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: 'Inter', var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', var(--font-geist-mono), monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+}
+
+/* ============================================
+   Apple Frosty Glass Theme - Light
+   ============================================ */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  /* Alipay Blue as primary */
+  --primary: oklch(0.55 0.15 250);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0.005 250);
+  --muted-foreground: oklch(0.45 0 0);
+  --accent: oklch(0.95 0.01 250);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.93 0 0);
+  --input: oklch(0.93 0 0);
+  --ring: oklch(0.55 0.15 250);
+  --chart-1: oklch(0.55 0.15 250);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.98 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.55 0.15 250);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.96 0.005 250);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.93 0 0);
+  --sidebar-ring: oklch(0.55 0.15 250);
+
+  /* Custom VibeWorker tokens */
+  --vw-blue: #1677ff;
+  --vw-blue-light: #e6f4ff;
+  --vw-orange: #ff6a00;
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.3);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+}
+
+.dark {
+  --background: oklch(0.12 0.005 250);
+  --foreground: oklch(0.94 0 0);
+  --card: oklch(0.16 0.005 250);
+  --card-foreground: oklch(0.94 0 0);
+  --popover: oklch(0.16 0.005 250);
+  --popover-foreground: oklch(0.94 0 0);
+  --primary: oklch(0.65 0.18 250);
+  --primary-foreground: oklch(0.05 0 0);
+  --secondary: oklch(0.22 0.005 250);
+  --secondary-foreground: oklch(0.94 0 0);
+  --muted: oklch(0.22 0.005 250);
+  --muted-foreground: oklch(0.65 0 0);
+  --accent: oklch(0.22 0.01 250);
+  --accent-foreground: oklch(0.94 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.65 0.18 250);
+  --sidebar: oklch(0.14 0.005 250);
+  --sidebar-foreground: oklch(0.94 0 0);
+  --sidebar-primary: oklch(0.65 0.18 250);
+  --sidebar-primary-foreground: oklch(0.05 0 0);
+  --sidebar-accent: oklch(0.2 0.01 250);
+  --sidebar-accent-foreground: oklch(0.94 0 0);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.65 0.18 250);
+
+  --glass-bg: rgba(20, 22, 30, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* ============================================
+   Glass Morphism Utilities
+   ============================================ */
+@layer utilities {
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+
+  .glass-subtle {
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px) saturate(150%);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+  }
+}
+
+/* ============================================
+   Animations
+   ============================================ */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse-soft {
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes typing-dots {
+
+  0%,
+  20% {
+    opacity: 0.2;
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  80%,
+  100% {
+    opacity: 0.2;
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s ease-out forwards;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.25s ease-out forwards;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 1.5s ease-in-out infinite;
+}
+
+/* ============================================
+   Chat & Markdown Styling
+   ============================================ */
+.chat-message-content {
+  line-height: 1.7;
+
+  p {
+    margin-bottom: 0.5em;
+  }
+
+  p:last-child {
+    margin-bottom: 0;
+  }
+
+  code {
+    @apply bg-muted text-primary px-1.5 py-0.5 rounded-md text-sm font-mono;
+  }
+
+  pre {
+    @apply bg-muted rounded-xl p-4 my-3 overflow-x-auto;
+  }
+
+  pre code {
+    @apply bg-transparent p-0;
+  }
+
+  ul,
+  ol {
+    @apply pl-6 my-2;
+  }
+
+  ul {
+    list-style-type: disc;
+  }
+
+  ol {
+    list-style-type: decimal;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-semibold mt-4 mb-2;
+  }
+
+  blockquote {
+    @apply border-l-3 border-primary/30 pl-4 italic text-muted-foreground my-2;
+  }
+
+  a {
+    @apply text-primary underline underline-offset-2;
+  }
+
+  table {
+    @apply w-full border-collapse my-3;
+  }
+
+  th,
+  td {
+    @apply border border-border px-3 py-2 text-left;
+  }
+
+  th {
+    @apply bg-muted font-medium;
+  }
+}
+
+/* ============================================
+   Scrollbar Styling
+   ============================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.8 0 0);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.65 0 0);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: oklch(0.35 0 0);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.45 0 0);
+}
+
+/* ============================================
+   Tool Call Card Styling
+   ============================================ */
+.tool-call-card {
+  @apply rounded-xl border border-border/50 overflow-hidden transition-all duration-200;
+}
+
+.tool-call-card:hover {
+  @apply border-primary/30;
+  box-shadow: 0 0 0 1px oklch(0.55 0.15 250 / 0.1);
+}
+
+.tool-call-header {
+  @apply flex items-center gap-2 px-3 py-2 bg-muted/50 cursor-pointer select-none;
+}
+
+/* ============================================
+   Resize Handle
+   ============================================ */
+.resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+  z-index: 10;
+}
+
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -2px;
+  right: -2px;
+  bottom: 0;
+}
+
+.resize-handle:hover {
+  background: oklch(0.55 0.15 250 / 0.4);
+}
+
+.resize-handle:active {
+  background: oklch(0.55 0.15 250 / 0.7);
+}
+
+.tool-call-body {
+  @apply px-3 py-2.5 text-sm bg-muted/20 space-y-2;
+}
+
+/* Tool detail content - code blocks inside tool call details */
+.tool-detail-content.chat-message-content pre,
+.tool-detail-content pre {
+  background: #f6f8fb !important;
+  color: #334155 !important;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #93b4f5;
+}
+
+.tool-detail-content.chat-message-content code,
+.tool-detail-content code {
+  font-family: 'JetBrains Mono', var(--font-geist-mono), monospace;
+  font-size: 0.7rem;
+  color: #475569 !important;
+  background: transparent !important;
+}
+
+.tool-detail-content p {
+  margin: 0.25rem 0;
+  line-height: 1.5;
+}
+
+.tool-detail-content ul,
+.tool-detail-content ol {
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+
+.tool-detail-content h1,
+.tool-detail-content h2,
+.tool-detail-content h3 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0.25rem;
+}

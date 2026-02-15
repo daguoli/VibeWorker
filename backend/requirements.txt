@@ -1,0 +1,32 @@
+# Core Framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+python-dotenv>=1.0.1
+pydantic>=2.7.0,<2.10.0
+pydantic-settings>=2.7.0
+
+# LangChain Agent Engine
+langchain>=0.3.14
+langchain-core>=0.3.29
+langchain-community>=0.3.14
+langchain-openai>=0.3.0
+langchain-experimental>=0.3.4
+langgraph>=0.2.60
+
+# LlamaIndex RAG Engine
+llama-index>=0.12.0
+llama-index-core>=0.12.0
+llama-index-readers-file>=0.4.0
+llama-index-embeddings-openai>=0.3.0
+
+# Tools Dependencies
+beautifulsoup4>=4.12.0
+html2text>=2024.2.26
+requests>=2.32.0
+httpx>=0.28.0
+
+# Utilities
+python-frontmatter>=1.1.0
+aiofiles>=24.1.0
+sse-starlette>=2.2.0
+pyyaml>=6.0.0
