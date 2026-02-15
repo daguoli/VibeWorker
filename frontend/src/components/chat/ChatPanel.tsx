@@ -490,6 +490,28 @@ export default function ChatPanel({
                                 })()}
                             </div>
                         )}
+                        {/* Thinking indicator - show when all tools are complete but no content yet */}
+                        {(() => {
+                            const allToolsComplete = thinkingSteps.length > 0 &&
+                                thinkingSteps.filter(s => s.type === "tool_start").length ===
+                                thinkingSteps.filter(s => s.type === "tool_end").length;
+                            const lastStep = thinkingSteps[thinkingSteps.length - 1];
+                            const isThinking = allToolsComplete && !streamingContent;
+
+                            if (isThinking && lastStep?.type === "tool_end") {
+                                return (
+                                    <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground animate-fade-in-up">
+                                        <div className="flex items-center gap-1">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse-soft" style={{ animationDelay: "0ms" }} />
+                                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse-soft" style={{ animationDelay: "150ms" }} />
+                                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse-soft" style={{ animationDelay: "300ms" }} />
+                                        </div>
+                                        <span>正在分析结果，思考下一步...</span>
+                                    </div>
+                                );
+                            }
+                            return null;
+                        })()}
                         {streamingContent && (
                             <div className="chat-message-content text-sm">
                                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownCodeComponents}>
@@ -499,10 +521,13 @@ export default function ChatPanel({
                             </div>
                         )}
                         {!streamingContent && thinkingSteps.length === 0 && (
-                            <div className="flex items-center gap-1.5 text-muted-foreground">
-                                <div className="w-2 h-2 rounded-full bg-primary/40 animate-pulse-soft" style={{ animationDelay: "0ms" }} />
-                                <div className="w-2 h-2 rounded-full bg-primary/40 animate-pulse-soft" style={{ animationDelay: "200ms" }} />
-                                <div className="w-2 h-2 rounded-full bg-primary/40 animate-pulse-soft" style={{ animationDelay: "400ms" }} />
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                                <div className="flex items-center gap-1">
+                                    <div className="w-2 h-2 rounded-full bg-primary/40 animate-pulse-soft" style={{ animationDelay: "0ms" }} />
+                                    <div className="w-2 h-2 rounded-full bg-primary/40 animate-pulse-soft" style={{ animationDelay: "200ms" }} />
+                                    <div className="w-2 h-2 rounded-full bg-primary/40 animate-pulse-soft" style={{ animationDelay: "400ms" }} />
+                                </div>
+                                <span className="text-xs">正在思考...</span>
                             </div>
                         )}
                     </div>
