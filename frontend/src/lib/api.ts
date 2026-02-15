@@ -242,6 +242,12 @@ export interface SettingsData {
   memory_daily_log_days: number;
   memory_max_prompt_tokens: number;
   memory_index_enabled: boolean;
+  // Cache configuration
+  enable_url_cache: boolean;
+  enable_llm_cache: boolean;
+  enable_prompt_cache: boolean;
+  enable_translate_cache: boolean;
+  mcp_enabled: boolean;
   // Theme (light/dark) - frontend-only, stored in localStorage
   theme?: "light" | "dark";
 }
@@ -565,6 +571,107 @@ export async function cleanupCache(): Promise<void> {
     method: "POST",
   });
   if (!res.ok) throw new Error("Failed to cleanup cache");
+}
+
+// ============================================
+// MCP API
+// ============================================
+export interface McpServerConfig {
+  transport: "stdio" | "sse";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  enabled: boolean;
+  description: string;
+}
+
+export interface McpServerInfo extends McpServerConfig {
+  status: "disconnected" | "connecting" | "connected" | "error";
+  tools_count: number;
+  error?: string | null;
+}
+
+export interface McpTool {
+  name: string;
+  description: string;
+  server?: string;
+}
+
+export async function fetchMcpServers(): Promise<Record<string, McpServerInfo>> {
+  const res = await fetch(`${API_BASE}/api/mcp/servers`);
+  if (!res.ok) throw new Error("Failed to fetch MCP servers");
+  const data = await res.json();
+  return data.servers || {};
+}
+
+export async function addMcpServer(name: string, config: McpServerConfig): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/mcp/servers/${encodeURIComponent(name)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Failed to add MCP server");
+  }
+}
+
+export async function updateMcpServer(name: string, config: McpServerConfig): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/mcp/servers/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Failed to update MCP server");
+  }
+}
+
+export async function deleteMcpServer(name: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/mcp/servers/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Failed to delete MCP server");
+  }
+}
+
+export async function connectMcpServer(name: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/mcp/servers/${encodeURIComponent(name)}/connect`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Failed to connect MCP server");
+  }
+}
+
+export async function disconnectMcpServer(name: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/mcp/servers/${encodeURIComponent(name)}/disconnect`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Failed to disconnect MCP server");
+  }
+}
+
+export async function fetchMcpTools(): Promise<McpTool[]> {
+  const res = await fetch(`${API_BASE}/api/mcp/tools`);
+  if (!res.ok) throw new Error("Failed to fetch MCP tools");
+  const data = await res.json();
+  return data.tools || [];
+}
+
+export async function fetchMcpServerTools(name: string): Promise<McpTool[]> {
+  const res = await fetch(`${API_BASE}/api/mcp/servers/${encodeURIComponent(name)}/tools`);
+  if (!res.ok) throw new Error("Failed to fetch server tools");
+  const data = await res.json();
+  return data.tools || [];
 }
 
 // ============================================

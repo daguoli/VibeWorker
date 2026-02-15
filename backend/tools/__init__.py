@@ -19,7 +19,7 @@ __all__ = [
 
 
 def get_all_tools() -> list:
-    """Create and return all 7 core tools."""
+    """Create and return all core tools + MCP tools."""
     tools = [
         create_terminal_tool(),
         create_python_repl_tool(),
@@ -29,4 +29,12 @@ def get_all_tools() -> list:
         create_memory_write_tool(),
         create_memory_search_tool(),
     ]
+    # Append MCP tools (dynamic, from connected MCP servers)
+    try:
+        from mcp_module import mcp_manager
+        mcp_tools = mcp_manager.get_all_mcp_tools()
+        if mcp_tools:
+            tools.extend(mcp_tools)
+    except Exception:
+        pass  # MCP unavailable — does not affect core tools
     return tools

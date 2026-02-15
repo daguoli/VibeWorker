@@ -19,7 +19,7 @@ import InspectorPanel from "@/components/editor/InspectorPanel";
 import SettingsDialog, { initTheme } from "@/components/settings/SettingsDialog";
 import { checkHealth, fetchSessionMessages, generateSessionTitle, type ChatMessage } from "@/lib/api";
 
-type ViewMode = "chat" | "memory" | "skills" | "cache";
+type ViewMode = "chat" | "memory" | "skills" | "mcp" | "cache";
 
 // Panel width constraints
 const LEFT_MIN = 200;

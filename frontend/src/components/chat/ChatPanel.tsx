@@ -70,7 +70,14 @@ const TOOL_LABELS: Record<string, { label: string; icon: string }> = {
 };
 
 function getToolDisplay(toolName: string) {
-    return TOOL_LABELS[toolName] || { label: toolName, icon: "🔧" };
+    if (TOOL_LABELS[toolName]) return TOOL_LABELS[toolName];
+    // MCP tools: mcp_servername_toolname → "MCP: toolname"
+    if (toolName.startsWith("mcp_")) {
+        const parts = toolName.substring(4).split("_");
+        const toolPart = parts.length > 1 ? parts.slice(1).join("_") : parts[0];
+        return { label: `MCP: ${toolPart}`, icon: "🔌" };
+    }
+    return { label: toolName, icon: "🔧" };
 }
 
 /** Normalize a tool call: detect [CACHE_HIT] marker in output and strip it */

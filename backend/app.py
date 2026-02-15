@@ -41,6 +41,15 @@ async def lifespan(app: FastAPI):
     logger.info("VibeWorker Backend started on port %d", settings.port)
     logger.info("Project root: %s", PROJECT_ROOT)
 
+    # Initialize MCP servers
+    if settings.mcp_enabled:
+        try:
+            from mcp_module import mcp_manager
+            await mcp_manager.initialize()
+            logger.info("MCP module initialized")
+        except Exception as e:
+            logger.warning(f"MCP initialization failed (non-fatal): {e}")
+
     # Start cache cleanup task
     async def cleanup_loop():
         """Periodic cache cleanup every hour."""
@@ -69,6 +78,15 @@ async def lifespan(app: FastAPI):
     # Shutdown
     cleanup_task.cancel()
     logger.info("Cache cleanup task stopped")
+
+    # Shutdown MCP servers
+    if settings.mcp_enabled:
+        try:
+            from mcp_module import mcp_manager
+            await mcp_manager.shutdown()
+            logger.info("MCP module shut down")
+        except Exception as e:
+            logger.warning(f"MCP shutdown error: {e}")
 
 
 # ============================================
@@ -857,6 +875,9 @@ class SettingsUpdateRequest(BaseModel):
     memory_daily_log_days: Optional[int] = None
     memory_max_prompt_tokens: Optional[int] = None
     memory_index_enabled: Optional[bool] = None
+    # MCP configuration
+    mcp_enabled: Optional[bool] = None
+    mcp_tool_cache_ttl: Optional[int] = None
 
 
 def _read_env_file() -> dict:
@@ -935,6 +956,9 @@ async def get_settings():
         "memory_daily_log_days": int(env.get("MEMORY_DAILY_LOG_DAYS", "2")),
         "memory_max_prompt_tokens": int(env.get("MEMORY_MAX_PROMPT_TOKENS", "4000")),
         "memory_index_enabled": env.get("MEMORY_INDEX_ENABLED", "true").lower() == "true",
+        # MCP configuration
+        "mcp_enabled": env.get("MCP_ENABLED", "true").lower() == "true",
+        "mcp_tool_cache_ttl": int(env.get("MCP_TOOL_CACHE_TTL", "3600")),
     }
 
 
@@ -971,12 +995,158 @@ async def update_settings(request: SettingsUpdateRequest):
         "MEMORY_DAILY_LOG_DAYS": str(request.memory_daily_log_days) if request.memory_daily_log_days is not None else None,
         "MEMORY_MAX_PROMPT_TOKENS": str(request.memory_max_prompt_tokens) if request.memory_max_prompt_tokens is not None else None,
         "MEMORY_INDEX_ENABLED": str(request.memory_index_enabled).lower() if request.memory_index_enabled is not None else None,
+        # MCP configuration
+        "MCP_ENABLED": str(request.mcp_enabled).lower() if request.mcp_enabled is not None else None,
+        "MCP_TOOL_CACHE_TTL": str(request.mcp_tool_cache_ttl) if request.mcp_tool_cache_ttl is not None else None,
     }
     for env_key, value in update_map.items():
         if value is not None:
             env[env_key] = value
     _write_env_file(env)
     return {"status": "ok", "message": "Settings saved. Restart backend to apply changes."}
+
+
+# ============================================
+# API Routes: MCP Management
+# ============================================
+class McpServerRequest(BaseModel):
+    transport: str  # "stdio" or "sse"
+    command: Optional[str] = None
+    args: Optional[list[str]] = None
+    env: Optional[dict[str, str]] = None
+    url: Optional[str] = None
+    headers: Optional[dict[str, str]] = None
+    enabled: bool = True
+    description: str = ""
+
+
+@app.get("/api/mcp/servers")
+async def list_mcp_servers():
+    """List all MCP servers with their connection status."""
+    try:
+        from mcp_module import mcp_manager
+        servers = mcp_manager.get_server_status()
+        return {"servers": servers}
+    except Exception as e:
+        logger.error(f"Failed to list MCP servers: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mcp/servers/{name}")
+async def add_mcp_server(name: str, request: McpServerRequest):
+    """Add a new MCP server configuration."""
+    from mcp_module.config import get_server, set_server
+
+    if get_server(name):
+        raise HTTPException(status_code=409, detail=f"Server '{name}' already exists")
+
+    config = request.model_dump(exclude_none=True)
+    set_server(name, config)
+
+    # Auto-connect if enabled
+    if config.get("enabled", True) and settings.mcp_enabled:
+        try:
+            from mcp_module import mcp_manager
+            await mcp_manager.connect_server(name)
+        except Exception as e:
+            logger.warning(f"Auto-connect failed for '{name}': {e}")
+
+    return {"status": "ok", "name": name}
+
+
+@app.put("/api/mcp/servers/{name}")
+async def update_mcp_server(name: str, request: McpServerRequest):
+    """Update an existing MCP server configuration."""
+    from mcp_module.config import get_server, set_server
+    from mcp_module import mcp_manager
+
+    if not get_server(name):
+        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+
+    # Disconnect first
+    try:
+        await mcp_manager.disconnect_server(name)
+    except Exception:
+        pass
+
+    config = request.model_dump(exclude_none=True)
+    set_server(name, config)
+
+    # Reconnect if enabled
+    if config.get("enabled", True) and settings.mcp_enabled:
+        try:
+            await mcp_manager.connect_server(name)
+        except Exception as e:
+            logger.warning(f"Reconnect failed for '{name}': {e}")
+
+    return {"status": "ok", "name": name}
+
+
+@app.delete("/api/mcp/servers/{name}")
+async def delete_mcp_server(name: str):
+    """Delete an MCP server."""
+    from mcp_module.config import delete_server as cfg_delete
+    from mcp_module import mcp_manager
+
+    # Disconnect first
+    try:
+        await mcp_manager.disconnect_server(name)
+    except Exception:
+        pass
+
+    if not cfg_delete(name):
+        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+
+    return {"status": "ok", "deleted": name}
+
+
+@app.post("/api/mcp/servers/{name}/connect")
+async def connect_mcp_server(name: str):
+    """Manually connect to an MCP server."""
+    from mcp_module import mcp_manager
+
+    try:
+        await mcp_manager.connect_server(name)
+        return {"status": "ok", "name": name}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Connection failed: {e}")
+
+
+@app.post("/api/mcp/servers/{name}/disconnect")
+async def disconnect_mcp_server(name: str):
+    """Manually disconnect an MCP server."""
+    from mcp_module import mcp_manager
+
+    try:
+        await mcp_manager.disconnect_server(name)
+        return {"status": "ok", "name": name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Disconnect failed: {e}")
+
+
+@app.get("/api/mcp/tools")
+async def list_all_mcp_tools():
+    """List all discovered MCP tools across all connected servers."""
+    from mcp_module import mcp_manager
+
+    all_tools = []
+    status = mcp_manager.get_server_status()
+    for srv_name, srv_info in status.items():
+        if srv_info.get("status") == "connected":
+            for tool in mcp_manager.get_server_tools(srv_name):
+                all_tools.append({**tool, "server": srv_name})
+    return {"tools": all_tools}
+
+
+@app.get("/api/mcp/servers/{name}/tools")
+async def list_server_mcp_tools(name: str):
+    """List tools for a specific MCP server."""
+    from mcp_module import mcp_manager
+
+    tools = mcp_manager.get_server_tools(name)
+    return {"server": name, "tools": tools}
 
 
 # ============================================

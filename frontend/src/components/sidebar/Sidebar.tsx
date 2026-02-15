@@ -6,6 +6,7 @@ import {
     Brain,
     Puzzle,
     Database,
+    Plug,
     Plus,
     Trash2,
     Store,
@@ -22,8 +23,9 @@ import { fetchSessions, createSession, deleteSession, fetchSkills, deleteSkill, 
 import SkillsStoreDialog from "@/components/store/SkillsStoreDialog";
 import CachePanel from "./CachePanel";
 import MemoryPanel from "./MemoryPanel";
+import McpPanel from "./McpPanel";
 
-type ViewMode = "chat" | "memory" | "skills" | "cache";
+type ViewMode = "chat" | "memory" | "skills" | "mcp" | "cache";
 
 interface SidebarProps {
     currentSessionId: string;
@@ -38,6 +40,7 @@ const NAV_ITEMS: { id: ViewMode; icon: React.ElementType; label: string }[] = [
     { id: "chat", icon: MessageSquare, label: "对话" },
     { id: "memory", icon: Brain, label: "记忆" },
     { id: "skills", icon: Puzzle, label: "技能" },
+    { id: "mcp", icon: Plug, label: "MCP" },
     { id: "cache", icon: Database, label: "缓存" },
 ];
 
@@ -170,7 +173,9 @@ export default function Sidebar({
                                 ? "记忆"
                                 : currentView === "skills"
                                     ? "技能"
-                                    : "缓存"}
+                                    : currentView === "mcp"
+                                        ? "MCP"
+                                        : "缓存"}
                     </h3>
                     {currentView === "chat" && (
                         <Tooltip>
@@ -287,6 +292,9 @@ export default function Sidebar({
                                 ))}
                             </div>
                         )}
+
+                        {/* MCP Panel */}
+                        {currentView === "mcp" && <McpPanel onFileOpen={onFileOpen} />}
 
                         {/* Cache Panel */}
                         {currentView === "cache" && <CachePanel onFileOpen={onFileOpen} />}

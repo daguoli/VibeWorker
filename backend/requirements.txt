@@ -25,6 +25,9 @@ html2text>=2024.2.26
 requests>=2.32.0
 httpx>=0.28.0
 
+# MCP (Model Context Protocol)
+mcp>=1.0.0
+
 # Utilities
 python-frontmatter>=1.1.0
 aiofiles>=24.1.0

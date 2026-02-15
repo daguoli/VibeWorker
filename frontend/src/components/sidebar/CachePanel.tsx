@@ -12,6 +12,7 @@ import {
     FileText,
     Languages,
     Wrench,
+    Plug,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,8 +39,16 @@ const CORE_CACHE_META: Record<string, { label: string; icon: React.ElementType }
     translate: { label: "翻译缓存", icon: Languages },
 };
 
+function isMcpCache(id: string): boolean {
+    // MCP tool caches: tool_mcp_server_tool or tool_test_mcp_tool etc.
+    return id.startsWith("tool_") && id.includes("mcp");
+}
+
 function getCacheLabel(id: string): string {
     if (CORE_CACHE_META[id]) return CORE_CACHE_META[id].label;
+    if (isMcpCache(id)) {
+        return "MCP";
+    }
     // tool_xxx -> "工具: xxx"
     if (id.startsWith("tool_")) {
         return `工具: ${id.replace("tool_", "").replace(/_/g, " ")}`;
@@ -49,6 +58,7 @@ function getCacheLabel(id: string): string {
 
 function getCacheIcon(id: string): React.ElementType {
     if (CORE_CACHE_META[id]) return CORE_CACHE_META[id].icon;
+    if (isMcpCache(id)) return Plug;
     return Wrench;
 }
 

@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     memory_max_prompt_tokens: int = Field(default=4000)
     memory_index_enabled: bool = Field(default=True)
 
+    # MCP Configuration
+    mcp_enabled: bool = Field(default=True)
+    mcp_tool_cache_ttl: int = Field(default=3600)  # 1 hour
+
     # Claude Code Skills compatibility
     claude_code_skills_dir: Optional[Path] = None
 

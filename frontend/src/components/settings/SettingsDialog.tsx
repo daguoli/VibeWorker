@@ -128,6 +128,11 @@ export default function SettingsDialog() {
         memory_daily_log_days: 2,
         memory_max_prompt_tokens: 4000,
         memory_index_enabled: true,
+        enable_url_cache: true,
+        enable_llm_cache: false,
+        enable_prompt_cache: true,
+        enable_translate_cache: true,
+        mcp_enabled: true,
         theme: "light",
     });
 
@@ -197,7 +202,7 @@ export default function SettingsDialog() {
                     </div>
                 ) : (
                     <Tabs defaultValue="general" className="w-full">
-                        <TabsList className="grid w-full grid-cols-3 mb-4">
+                        <TabsList className="grid w-full grid-cols-4 mb-4">
                             <TabsTrigger value="general" className="text-xs">
                                 <span className="w-1.5 h-1.5 rounded-full bg-slate-500 mr-1.5" />
                                 通用
@@ -209,6 +214,10 @@ export default function SettingsDialog() {
                             <TabsTrigger value="memory" className="text-xs">
                                 <span className="w-1.5 h-1.5 rounded-full bg-purple-500 mr-1.5" />
                                 记忆
+                            </TabsTrigger>
+                            <TabsTrigger value="cache" className="text-xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5" />
+                                缓存
                             </TabsTrigger>
                         </TabsList>
 
@@ -381,6 +390,43 @@ export default function SettingsDialog() {
                                 onChange={(v) => updateField("memory_max_prompt_tokens", parseInt(v) || 4000)}
                                 type="number"
                                 placeholder="4000"
+                            />
+                        </TabsContent>
+
+                        {/* Cache Tab */}
+                        <TabsContent value="cache" className="space-y-3 mt-0">
+                            <p className="text-xs text-muted-foreground mb-3">
+                                控制各类缓存的开关，关闭后该类型不再写入新缓存
+                            </p>
+                            <ToggleField
+                                label="URL 缓存"
+                                checked={form.enable_url_cache}
+                                onChange={(v) => updateField("enable_url_cache", v)}
+                                hint="(网页请求结果)"
+                            />
+                            <ToggleField
+                                label="LLM 缓存"
+                                checked={form.enable_llm_cache}
+                                onChange={(v) => updateField("enable_llm_cache", v)}
+                                hint="(Agent 响应，默认关闭)"
+                            />
+                            <ToggleField
+                                label="Prompt 缓存"
+                                checked={form.enable_prompt_cache}
+                                onChange={(v) => updateField("enable_prompt_cache", v)}
+                                hint="(System Prompt 拼接)"
+                            />
+                            <ToggleField
+                                label="翻译缓存"
+                                checked={form.enable_translate_cache}
+                                onChange={(v) => updateField("enable_translate_cache", v)}
+                                hint="(翻译 API 结果)"
+                            />
+                            <ToggleField
+                                label="MCP 工具缓存"
+                                checked={form.mcp_enabled}
+                                onChange={(v) => updateField("mcp_enabled", v)}
+                                hint="(MCP Server 连接与工具缓存)"
                             />
                         </TabsContent>
                     </Tabs>
