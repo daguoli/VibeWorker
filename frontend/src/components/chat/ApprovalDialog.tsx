@@ -20,6 +20,8 @@ const TOOL_LABELS: Record<string, { label: string; icon: string }> = {
     python_repl: { label: "执行代码", icon: "🐍" },
     terminal: { label: "执行命令", icon: "💻" },
     search_knowledge_base: { label: "检索知识库", icon: "🔍" },
+    memory_write: { label: "存储记忆", icon: "💾" },
+    memory_search: { label: "搜索记忆", icon: "🧠" },
 };
 
 function getToolDisplay(toolName: string) {
@@ -50,12 +52,14 @@ interface ApprovalDialogProps {
     request: ApprovalRequestData | null;
     timeout?: number;
     onResolved: () => void;
+    onAllowForSession?: (tool: string) => void;
 }
 
 export default function ApprovalDialog({
     request,
     timeout = 60,
     onResolved,
+    onAllowForSession,
 }: ApprovalDialogProps) {
     const [remaining, setRemaining] = useState(timeout);
     const [sending, setSending] = useState(false);
@@ -80,11 +84,15 @@ export default function ApprovalDialog({
     }, [request?.request_id]);
 
     const handleDecision = useCallback(
-        async (approved: boolean) => {
+        async (approved: boolean, allowForSession = false) => {
             if (!request || sending) return;
             setSending(true);
             try {
                 await sendApproval(request.request_id, approved);
+                // If user chose "allow for session", add tool to allowed list
+                if (approved && allowForSession && onAllowForSession) {
+                    onAllowForSession(request.tool);
+                }
             } catch (err) {
                 console.error("Failed to send approval:", err);
             } finally {
@@ -92,7 +100,7 @@ export default function ApprovalDialog({
                 onResolved();
             }
         },
-        [request, sending, onResolved]
+        [request, sending, onResolved, onAllowForSession]
     );
 
     if (!request) return null;
@@ -155,7 +163,16 @@ export default function ApprovalDialog({
                     </div>
                 </div>
 
-                <DialogFooter className="gap-2 sm:gap-2">
+                <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-2">
+                    <Button
+                        variant="ghost"
+                        onClick={() => handleDecision(true, true)}
+                        disabled={sending}
+                        className="sm:mr-auto text-muted-foreground hover:text-foreground"
+                    >
+                        <ShieldCheck className="w-4 h-4 mr-1.5" />
+                        本次会话均允许
+                    </Button>
                     <Button
                         variant="outline"
                         onClick={() => handleDecision(false)}
@@ -171,7 +188,7 @@ export default function ApprovalDialog({
                         className="bg-green-600 hover:bg-green-700 text-white"
                     >
                         <ShieldCheck className="w-4 h-4 mr-1.5" />
-                        允许执行
+                        允许
                     </Button>
                 </DialogFooter>
             </DialogContent>

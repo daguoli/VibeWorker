@@ -21,6 +21,11 @@
 + **模型接口**：兼容 OpenAI API 格式（支持 OpenRouter, Zenmux 等聚合模型平台，并且也支持用户自己配置API地址和Key）。
 + **数据存储**：本地文件系统 (Local File System) 为主，不引入 MySQL/Redis 等重型依赖。
 + **数据目录隔离 ✅ 已实现**：所有用户可写数据（会话、记忆、技能、配置等）存储在 `~/.vibeworker/` 目录，与项目源码完全分离。`DATA_DIR` 环境变量支持自定义，但内置安全校验确保数据目录不会指向项目源码目录内（如意外设为 `.` 或相对路径时自动回退到 `~/.vibeworker/`）。
++ **会话级临时目录隔离 ✅ 已实现**：
+    - 每个会话拥有独立的工作目录 `~/.vibeworker/tmp/{session_id}/`
+    - `terminal` 和 `python_repl` 工具的 cwd 自动切换到当前会话的临时目录
+    - 通过 `session_context.py` 模块级变量管理会话上下文（避免 ContextVar 在线程池中不传播的问题）
+    - 会话隔离确保多会话并发时文件操作不互相干扰
 + **智能缓存系统** ✅ 已实现：
     - 双层缓存架构（L1 内存 + L2 磁盘）
     - 支持 URL 缓存、LLM 缓存、Prompt 缓存、翻译缓存
@@ -464,6 +469,9 @@ MEMORY_INDEX_ENABLED=true       # 记忆语义搜索索引开关
     - 返回：日志列表（含 date, path, size），按日期倒序
 + **Endpoint**: `GET /api/memory/daily-logs/{date}` - 获取指定日期的日志内容。
     - 返回：`{ "date": "2026-02-15", "content": "..." }`
++ **Endpoint**: `DELETE /api/memory/daily-logs/{date}` - 删除指定日期的日志文件。
+    - 返回：`{ "status": "ok", "deleted": "2026-02-15" }`
+    - 注：与 GET 合并为 `api_route` 实现，避免 Starlette 同路径不同方法的路由冲突
 + **Endpoint**: `POST /api/memory/search` - 搜索记忆。
     - Body: `{ "query": "...", "top_k": 5 }`
     - 返回：搜索结果（语义搜索优先，降级为关键词匹配）
@@ -493,14 +501,19 @@ MEMORY_INDEX_ENABLED=true       # 记忆语义搜索索引开关
     - 技能列表：每项右侧显示删除按钮（hover 可见），点击弹出确认后删除。
     - **记忆面板 ✅ 已实现**：三 Tab 设计
         * **记忆 Tab**：持久记忆条目管理，分类筛选（全部/偏好/事实/任务/反思/通用）+ 搜索 + 添加/删除
-        * **日记 Tab**：按日期倒序列出 Daily Log 文件，点击在 Inspector 中打开
+        * **日记 Tab**：按日期倒序列出 Daily Log 文件，点击在 Inspector 中打开，支持删除日志文件（hover 显示删除图标）
         * **人格 Tab**：Agent 人格定义文件快捷入口（MEMORY.md/SOUL.md/IDENTITY.md/USER.md/AGENTS.md）
+    - **会话列表滑动选中动画 ✅ 已实现**：选中会话时显示平滑滑动的高亮背景指示器，跟随选中项移动
 + **中间 (Stage)**：对话流 + **思考链可视化** (Collapsible Thoughts)。
     - 宽度自适应填充剩余空间。
     - **工具调用友好化展示**：
-        * 工具名称映射为中文标签 + Emoji（如 `read_file` -> 📄 读取文件）。
+        * 工具名称映射为中文标签 + Emoji（如 `read_file` -> 📄 读取文件、`memory_write` -> 💾 存储记忆、`memory_search` -> 🧠 搜索记忆）。
         * 输入参数从 JSON 中提取关键信息作为摘要显示。
         * 展开详情后，Input 和 Output 均使用 Markdown 渲染（代码块语法高亮、标题、列表等），`\n` 自动转换为实际换行。
+    - **工具审批增强 ✅ 已实现**：
+        * 高风险工具（terminal、python_repl 等）执行前弹出审批对话框
+        * 支持「允许」「拒绝」「本次会话均允许」三种选择
+        * 「本次会话均允许」将该工具加入会话白名单，后续调用自动批准，无需重复确认
     - **缓存指示器** ✅ 已实现：
         * 工具调用使用缓存时，显示 ⚡ 图标（灰色半透明，不显眼）。
         * 鼠标悬停显示「使用缓存」提示。
@@ -525,7 +538,8 @@ MEMORY_INDEX_ENABLED=true       # 记忆语义搜索索引开关
     - 左侧：**"VibeWorker"** + 版本号
     - 右侧：后端状态指示器（在线/离线）+ ⚙️ 设置按钮（弹窗配置 LLM/Embedding 模型参数）+ Inspector 开关按钮
 + **设置弹窗 (Settings Dialog)**：
-    - 点击导航栏设置按钮打开，分「主模型」「Embedding」「翻译」「记忆」四个 Tab。
+    - 点击导航栏设置按钮打开，分「通用」「主模型」「Embedding」「翻译」「记忆」Tab。
+    - **通用 Tab**：显示数据目录路径（只读，通过环境变量 `DATA_DIR` 修改）、主题切换。
     - 支持配置 API Key（密码模式，可切换显示）、API Base URL、模型名称、Temperature、Max Tokens。
     - **记忆 Tab ✅ 已实现**：配置自动提取开关、语义搜索索引开关、日志加载天数、记忆 Token 预算。
     - 保存后自动关闭弹窗，配置写入后端 `.env` 文件。
@@ -534,7 +548,47 @@ MEMORY_INDEX_ENABLED=true       # 记忆语义搜索索引开关
     - 使用 JetBrains Mono 等宽字体，字号 `0.7rem`。
 
 
-## 八、项目目录结构参考
+## 八、启动与运行 ✅ 已实现
+
+### 1. 一键启动脚本
+项目根目录提供跨平台启动脚本，支持前后端同时启动/停止/重启：
+
+**Linux/macOS/Git Bash:**
+```bash
+./start.sh              # 启动前后端
+./start.sh stop         # 停止所有服务
+./start.sh restart      # 重启所有服务
+./start.sh status       # 查看运行状态
+./start.sh logs backend # 查看后端日志
+./start.sh backend restart  # 仅重启后端
+./start.sh frontend restart # 仅重启前端
+```
+
+**Windows CMD:**
+```cmd
+start.bat               # 启动前后端
+start.bat stop          # 停止所有服务
+start.bat restart       # 重启所有服务
+start.bat status        # 查看运行状态
+```
+
+**脚本特性：**
+- 自动检测并激活 Python 虚拟环境（venv/.venv）
+- PID 管理，避免重复启动
+- 优雅终止进程，超时后强制终止
+- 日志文件保存在 `.pids/` 目录
+- 彩色状态输出（Bash 版本）
+
+### 2. 手动启动
+```bash
+# 后端 (http://localhost:8088)
+cd backend && pip install -r requirements.txt && python app.py
+
+# 前端 (http://localhost:3000)
+cd frontend && npm install && npm run dev
+```
+
+## 九、项目目录结构参考
 建议 Claude Code 按照以下结构进行初始化：
 
 ```plain
@@ -545,6 +599,7 @@ vibeworker/
 │   ├── prompt_builder.py       # System Prompt 动态拼接
 │   ├── sessions_manager.py     # 会话管理器
 │   ├── memory_manager.py       # 记忆管理中心（MemoryManager 核心类）✅
+│   ├── session_context.py      # 会话上下文管理（session_id → 临时目录映射）✅
 │   ├── requirements.txt
 │   ├── user_default/           # 首次运行模板，自动复制到 ~/.vibeworker/
 │   │   ├── .env                # 环境变量模板（API Key 等）
@@ -589,6 +644,7 @@ vibeworker/
 │   │   └── logs/               # Daily Logs（每日日志，YYYY-MM-DD.md）
 │   ├── skills/                 # Agent Skills（本地已安装技能）
 │   ├── workspace/              # System Prompts (SOUL.md, AGENTS.md, etc.)
+│   ├── tmp/                    # 会话临时工作目录（每个会话独立子目录）✅
 │   ├── knowledge/              # RAG 知识库文档
 │   ├── storage/                # 索引持久化存储
 │   ├── .cache/                 # 缓存存储 (url/ llm/ prompt/ translate/ tool_*/)
@@ -620,6 +676,8 @@ vibeworker/
 │   ├── skills.sh               # Linux/macOS 技能管理脚本
 │   └── skills.bat              # Windows 技能管理脚本
 │
+├── start.sh                    # 启动脚本 (Linux/macOS/Git Bash) ✅
+├── start.bat                   # 启动脚本 (Windows CMD) ✅
 └── README.md
 ```
 

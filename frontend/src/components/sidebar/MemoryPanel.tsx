@@ -23,6 +23,7 @@ import {
     addMemoryEntry,
     deleteMemoryEntry,
     fetchDailyLogs,
+    deleteDailyLog,
     searchMemory,
     type MemoryEntry,
     type DailyLog,
@@ -100,6 +101,16 @@ export default function MemoryPanel({ onFileOpen }: MemoryPanelProps) {
             // Backend might not be running
         }
     }, []);
+
+    const handleDeleteDailyLog = async (e: React.MouseEvent, date: string) => {
+        e.stopPropagation();
+        try {
+            await deleteDailyLog(date);
+            await loadDailyLogs();
+        } catch {
+            // Ignore
+        }
+    };
 
     useEffect(() => {
         if (activeTab === "entries") loadEntries();
@@ -367,7 +378,10 @@ export default function MemoryPanel({ onFileOpen }: MemoryPanelProps) {
                                     <span className="text-[10px] text-muted-foreground/50">
                                         {formatSize(log.size)}
                                     </span>
-                                    <ChevronRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-40 transition-opacity" />
+                                    <Trash2
+                                        className="w-3.5 h-3.5 opacity-0 group-hover:opacity-40 hover:!opacity-100 hover:text-destructive shrink-0 transition-opacity"
+                                        onClick={(e) => handleDeleteDailyLog(e, log.date)}
+                                    />
                                 </button>
                             ))}
                         </>

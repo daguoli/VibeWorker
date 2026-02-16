@@ -207,6 +207,7 @@ class Settings(BaseSettings):
             self.storage_dir,
             self.cache_dir,
             self.cache_dir / "url",
+            data / "tmp",
             self.cache_dir / "llm",
             self.cache_dir / "prompt",
             self.cache_dir / "translate",

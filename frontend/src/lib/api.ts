@@ -511,6 +511,13 @@ export async function fetchDailyLogContent(date: string): Promise<string> {
   return data.content;
 }
 
+export async function deleteDailyLog(date: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/memory/daily-logs/${date}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`Failed to delete daily log for ${date}`);
+}
+
 export async function searchMemory(
   query: string,
   topK: number = 5

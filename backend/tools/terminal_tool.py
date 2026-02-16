@@ -1,17 +1,21 @@
 """Terminal Tool - Execute shell commands with security classification."""
+import logging
 import subprocess
 from pathlib import Path
 from typing import Optional
 
 from langchain_core.tools import tool
 from config import PROJECT_ROOT, settings
+from session_context import get_session_tmp_dir, get_session_id
 from security.classifier import classify_terminal_command, RiskLevel
+
+logger = logging.getLogger(__name__)
 
 
 @tool
 def terminal(command: str, timeout: Optional[int] = 30) -> str:
     """Execute a shell command in a sandboxed environment.
-    The working directory is the user data directory. Use relative paths for all file operations.
+    The working directory is the session temp directory (tmp/{session_id}/). Use relative paths for all file operations.
 
     Args:
         command: The shell command to execute.
@@ -48,13 +52,15 @@ def terminal(command: str, timeout: Optional[int] = 30) -> str:
         pass  # Fall through to local execution
 
     try:
+        cwd = str(get_session_tmp_dir())
+        logger.info(f"terminal cwd={cwd} session_id={get_session_id()!r}")
         result = subprocess.run(
             command,
             shell=True,
             capture_output=True,
             text=True,
             timeout=timeout,
-            cwd=str(settings.get_data_path()),
+            cwd=cwd,
             env=None,  # Use current environment
         )
         output = ""

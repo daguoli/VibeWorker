@@ -29,7 +29,25 @@ VibeWorker 是一个轻量级且高度透明的 AI 数字员工 Agent 系统。�
 
 ## 快速开始
 
-### 后端启动
+### 一键启动（推荐）
+
+```bash
+# Linux/macOS/Git Bash
+./start.sh              # 启动前后端
+./start.sh stop         # 停止
+./start.sh restart      # 重启
+./start.sh status       # 查看状态
+
+# Windows CMD
+start.bat               # 启动前后端
+start.bat stop          # 停止
+start.bat restart       # 重启
+start.bat status        # 查看状态
+```
+
+### 手动启动
+
+**后端启动**
 
 ```bash
 cd backend
@@ -39,7 +57,7 @@ python app.py
 
 后端将在 `http://localhost:8088` 启动。
 
-### 前端启动
+**前端启动**
 
 ```bash
 cd frontend

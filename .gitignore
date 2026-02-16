@@ -14,8 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -135,6 +135,7 @@ Thumbs.db
 storage/index/
 sessions/*.json
 memory/logs/*.md
+.pids/
 nul
 .claude/
 .agent/

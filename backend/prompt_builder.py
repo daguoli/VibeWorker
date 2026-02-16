@@ -145,7 +145,8 @@ def build_system_prompt() -> str:
     parts.append(
         f"<!-- WORKSPACE_INFO -->\n"
         f"## 环境路径\n"
-        f"- **工作目录** (cwd): `{data_path}`\n"
+        f"- **用户数据目录**: `{data_path}`\n"
+        f"- **工作目录** (cwd): `{data_path}/tmp/{{session_id}}/`（每个会话独立的临时目录）\n"
         f"- **项目源码**（只读）: `{PROJECT_ROOT}`"
     )
 

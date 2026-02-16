@@ -56,17 +56,21 @@ def _make_restricted_builtins():
     return safe_builtins
 
 
-def _chdir_to_data_dir():
-    """Change cwd to data directory and return the old cwd."""
-    from config import settings
+def _chdir_to_session_tmp():
+    """Change cwd to session temp directory and return the old cwd."""
+    import logging
+    from session_context import get_session_tmp_dir, get_session_id
+    _logger = logging.getLogger(__name__)
     old_cwd = os.getcwd()
-    os.chdir(str(settings.get_data_path()))
+    tmp_dir = str(get_session_tmp_dir())
+    _logger.info(f"python_repl cwd={tmp_dir} session_id={get_session_id()!r}")
+    os.chdir(tmp_dir)
     return old_cwd
 
 
 def _execute_code(code: str) -> str:
     """Execute Python code with restricted builtins."""
-    old_cwd = _chdir_to_data_dir()
+    old_cwd = _chdir_to_session_tmp()
     old_stdout = sys.stdout
     old_stderr = sys.stderr
     redirected_stdout = io.StringIO()
@@ -105,7 +109,7 @@ def _execute_code(code: str) -> str:
 
 def _execute_code_unrestricted(code: str) -> str:
     """Execute Python code without sandbox restrictions (when sandbox is disabled)."""
-    old_cwd = _chdir_to_data_dir()
+    old_cwd = _chdir_to_session_tmp()
     old_stdout = sys.stdout
     old_stderr = sys.stderr
     redirected_stdout = io.StringIO()
@@ -143,7 +147,7 @@ def _execute_code_unrestricted(code: str) -> str:
 @tool
 def python_repl(code: str) -> str:
     """Execute Python code and return the output.
-    The working directory is the user data directory. Use relative paths for all file operations.
+    The working directory is the session temp directory (tmp/{session_id}/). Use relative paths for all file operations.
 
     This tool runs Python code in a restricted environment. Use it for
     calculations, data processing, and script execution.

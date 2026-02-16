@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import {
     MessageSquare,
     Brain,
@@ -46,27 +46,28 @@ const NAV_ITEMS: { id: ViewMode; icon: React.ElementType; label: string }[] = [
 ];
 
 /** Session list item — extracted as a component to use hooks per-item */
-function SessionItem({ session, isSelected, onSelect, onDelete }: {
+const SessionItem = React.forwardRef<HTMLButtonElement, {
     session: Session;
     isSelected: boolean;
     onSelect: () => void;
     onDelete: (e: React.MouseEvent) => void;
-}) {
+}>(({ session, isSelected, onSelect, onDelete }, ref) => {
     const isStreaming = useIsSessionStreaming(session.session_id);
     return (
         <button
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all duration-150 group flex items-start gap-2 overflow-hidden ${isSelected
-                ? "bg-primary/10 text-primary font-medium"
-                : "hover:bg-accent text-foreground/70"
+            ref={ref}
+            className={`relative z-10 w-full text-left px-3 py-2.5 rounded-xl text-sm transition-colors duration-150 group flex items-center gap-2 overflow-hidden ${isSelected
+                ? "text-primary font-medium"
+                : "hover:bg-accent/50 text-foreground/70"
                 }`}
             onClick={onSelect}
         >
-            <MessageSquare className="w-3.5 h-3.5 shrink-0 opacity-50 mt-0.5" />
+            <MessageSquare className="w-3.5 h-3.5 shrink-0 opacity-50" />
             <span className="flex-1 min-w-0 line-clamp-2 break-words">
                 {session.title || session.preview || "新会话"}
             </span>
             {isStreaming && (
-                <span className="relative flex h-2 w-2 shrink-0 mt-1.5">
+                <span className="relative flex h-2 w-2 shrink-0">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
                 </span>
@@ -79,6 +80,85 @@ function SessionItem({ session, isSelected, onSelect, onDelete }: {
                 onClick={onDelete}
             />
         </button>
+    );
+});
+SessionItem.displayName = "SessionItem";
+
+/** Session list with sliding selection indicator */
+function SessionList({
+    sessions,
+    currentSessionId,
+    onSessionSelect,
+    onDeleteSession
+}: {
+    sessions: Session[];
+    currentSessionId: string;
+    onSessionSelect: (id: string) => void;
+    onDeleteSession: (e: React.MouseEvent, id: string) => void;
+}) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const itemRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+    const [indicatorStyle, setIndicatorStyle] = useState<{ top: number; height: number } | null>(null);
+
+    const updateIndicator = useCallback(() => {
+        const container = containerRef.current;
+        const selectedItem = itemRefs.current.get(currentSessionId);
+
+        if (container && selectedItem) {
+            const containerRect = container.getBoundingClientRect();
+            const itemRect = selectedItem.getBoundingClientRect();
+            setIndicatorStyle({
+                top: itemRect.top - containerRect.top,
+                height: itemRect.height,
+            });
+        }
+    }, [currentSessionId]);
+
+    // Update indicator position when selection changes or sessions change
+    useLayoutEffect(() => {
+        updateIndicator();
+    }, [currentSessionId, sessions, updateIndicator]);
+
+    // Also update on window resize
+    useEffect(() => {
+        window.addEventListener("resize", updateIndicator);
+        return () => window.removeEventListener("resize", updateIndicator);
+    }, [updateIndicator]);
+
+    const setItemRef = useCallback((id: string, el: HTMLButtonElement | null) => {
+        if (el) {
+            itemRefs.current.set(id, el);
+        } else {
+            itemRefs.current.delete(id);
+        }
+    }, []);
+
+    return (
+        <div ref={containerRef} className="relative">
+            {/* Sliding selection indicator */}
+            {indicatorStyle && (
+                <div
+                    className="absolute left-0 right-0 bg-primary/10 rounded-xl transition-all duration-200 ease-out"
+                    style={{
+                        top: indicatorStyle.top,
+                        height: indicatorStyle.height,
+                    }}
+                />
+            )}
+            {/* Session items */}
+            <div className="space-y-1">
+                {sessions.map((session) => (
+                    <SessionItem
+                        key={session.session_id}
+                        ref={(el) => setItemRef(session.session_id, el)}
+                        session={session}
+                        isSelected={session.session_id === currentSessionId}
+                        onSelect={() => onSessionSelect(session.session_id)}
+                        onDelete={(e) => onDeleteSession(e, session.session_id)}
+                    />
+                ))}
+            </div>
+        </div>
     );
 }
 
@@ -274,15 +354,14 @@ export default function Sidebar({
                                         </p>
                                     </div>
                                 )}
-                                {sessions.map((session) => (
-                                    <SessionItem
-                                        key={session.session_id}
-                                        session={session}
-                                        isSelected={session.session_id === currentSessionId}
-                                        onSelect={() => onSessionSelect(session.session_id)}
-                                        onDelete={(e) => handleDeleteSession(e, session.session_id)}
+                                {sessions.length > 0 && (
+                                    <SessionList
+                                        sessions={sessions}
+                                        currentSessionId={currentSessionId}
+                                        onSessionSelect={onSessionSelect}
+                                        onDeleteSession={handleDeleteSession}
                                     />
-                                ))}
+                                )}
                             </>
                         )}
 

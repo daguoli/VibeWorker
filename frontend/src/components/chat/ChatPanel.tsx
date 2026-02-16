@@ -60,6 +60,8 @@ const TOOL_LABELS: Record<string, { label: string; icon: string }> = {
     python_repl: { label: "执行代码", icon: "🐍" },
     terminal: { label: "执行命令", icon: "💻" },
     search_knowledge_base: { label: "检索知识库", icon: "🔍" },
+    memory_write: { label: "存储记忆", icon: "💾" },
+    memory_search: { label: "搜索记忆", icon: "🧠" },
 };
 
 function getToolDisplay(toolName: string) {
@@ -212,7 +214,7 @@ export default function ChatPanel({
 }: ChatPanelProps) {
     // Store-driven state
     const { messages, isStreaming, streamingContent, thinkingSteps, approvalRequest } = useSessionState(sessionId);
-    const { sendMessage, stopStream, clearApproval } = useSessionActions(sessionId);
+    const { sendMessage, stopStream, clearApproval, addSessionAllowedTool } = useSessionActions(sessionId);
 
     // Local UI state
     const [inputValue, setInputValue] = useState("");
@@ -233,6 +235,11 @@ export default function ChatPanel({
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, streamingContent]);
+
+    // Auto-focus input when session changes
+    useEffect(() => {
+        inputRef.current?.focus();
+    }, [sessionId]);
 
     const handleSend = useCallback(() => {
         const text = inputValue.trim();
@@ -529,6 +536,7 @@ export default function ChatPanel({
             <ApprovalDialog
                 request={approvalRequest}
                 onResolved={() => clearApproval()}
+                onAllowForSession={(tool) => addSessionAllowedTool(tool)}
             />
         </div>
     );

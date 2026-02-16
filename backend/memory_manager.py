@@ -253,6 +253,15 @@ class MemoryManager:
             return ""
         return path.read_text(encoding="utf-8")
 
+    def delete_daily_log(self, day: str) -> bool:
+        """Delete a daily log file."""
+        path = self._daily_log_path(day)
+        if not path.exists():
+            return False
+        path.unlink()
+        logger.info(f"Deleted daily log: {path.name}")
+        return True
+
     def list_daily_logs(self) -> list[dict]:
         """List all daily log files with metadata."""
         logs = []

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -18,6 +18,7 @@ import uvicorn
 
 from config import settings, PROJECT_ROOT
 from sessions_manager import session_manager
+from session_context import set_session_id
 from graph.agent import run_agent, set_sse_approval_callback
 from tools.rag_tool import rebuild_index
 from memory_manager import memory_manager
@@ -162,6 +163,9 @@ async def chat(request: ChatRequest):
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
+    # Set session context for tools (tmp dir, etc.)
+    set_session_id(request.session_id)
+
     # Ensure session exists
     session_manager.create_session(request.session_id)
 
@@ -217,6 +221,9 @@ async def chat(request: ChatRequest):
 
 async def _stream_agent_response(message: str, history: list, session_id: str):
     """Generator for SSE streaming."""
+    # Restore session context inside the async generator
+    set_session_id(session_id)
+
     full_response = ""
     tool_calls_log = []
 
@@ -806,13 +813,19 @@ async def list_daily_logs():
     return {"logs": logs}
 
 
-@app.get("/api/memory/daily-logs/{date}")
-async def get_daily_log(date: str):
-    """Get content of a specific daily log."""
-    content = memory_manager.read_daily_log(date)
-    if not content:
-        raise HTTPException(status_code=404, detail=f"No log found for {date}")
-    return {"date": date, "content": content}
+@app.api_route("/api/memory/daily-logs/{date}", methods=["GET", "DELETE"])
+async def daily_log_by_date(date: str, request: Request):
+    """Get or delete a specific daily log."""
+    if request.method == "DELETE":
+        success = memory_manager.delete_daily_log(date)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"No log found for {date}")
+        return {"status": "ok", "deleted": date}
+    else:
+        content = memory_manager.read_daily_log(date)
+        if not content:
+            raise HTTPException(status_code=404, detail=f"No log found for {date}")
+        return {"date": date, "content": content}
 
 
 @app.post("/api/memory/search")

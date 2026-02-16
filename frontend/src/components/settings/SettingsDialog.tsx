@@ -274,12 +274,12 @@ export default function SettingsDialog() {
                                 <input
                                     type="text"
                                     value={form.data_dir}
-                                    onChange={(e) => updateField("data_dir", e.target.value)}
+                                    readOnly
                                     placeholder="~/.vibeworker/"
-                                    className="w-full h-8 px-3 text-xs rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all font-mono"
+                                    className="w-full h-8 px-3 text-xs rounded-lg border border-border bg-muted text-muted-foreground cursor-not-allowed font-mono"
                                 />
                                 <p className="text-[10px] text-muted-foreground/60">
-                                    所有用户数据（会话、记忆、技能、文件）存储于此，修改后需重启后端生效
+                                    所有用户数据（会话、记忆、技能、文件）存储于此，通过环境变量 DATA_DIR 修改
                                 </p>
                             </div>
                         </TabsContent>
