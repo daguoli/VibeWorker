@@ -20,6 +20,7 @@
     - 用于处理非结构化文档的混合检索（Hybrid Search），作为 Agent 的知识外挂。
 + **模型接口**：兼容 OpenAI API 格式（支持 OpenRouter, Zenmux 等聚合模型平台，并且也支持用户自己配置API地址和Key）。
 + **数据存储**：本地文件系统 (Local File System) 为主，不引入 MySQL/Redis 等重型依赖。
++ **数据目录隔离 ✅ 已实现**：所有用户可写数据（会话、记忆、技能、配置等）存储在 `~/.vibeworker/` 目录，与项目源码完全分离。`DATA_DIR` 环境变量支持自定义，但内置安全校验确保数据目录不会指向项目源码目录内（如意外设为 `.` 或相对路径时自动回退到 `~/.vibeworker/`）。
 + **智能缓存系统** ✅ 已实现：
     - 双层缓存架构（L1 内存 + L2 磁盘）
     - 支持 URL 缓存、LLM 缓存、Prompt 缓存、翻译缓存
@@ -423,8 +424,9 @@ MEMORY_INDEX_ENABLED=true       # 记忆语义搜索索引开关
 + **Endpoint**: `POST /api/knowledge/rebuild` - 强制重建 RAG 知识库索引。
 
 ### 6. 设置管理接口
-+ **Endpoint**: `GET /api/settings` - 获取当前模型配置（LLM/Embedding 的 API Key、Base URL、模型名称、Temperature、Max Tokens 等），数据读取自 `.env` 文件。
-+ **Endpoint**: `PUT /api/settings` - 更新模型配置，写回 `.env` 文件（保留注释和原有结构）。修改后需重启后端生效。
++ **Endpoint**: `GET /api/settings` - 获取当前模型配置（LLM/Embedding 的 API Key、Base URL、模型名称、Temperature、Max Tokens 等），数据读取自用户数据目录的 `.env` 文件（`~/.vibeworker/.env`）。
++ **Endpoint**: `PUT /api/settings` - 更新模型配置，写回用户 `.env` 文件（保留注释和原有结构）。修改后需重启后端生效。
++ **安全写入保护 ✅ 已实现**：写入前校验目标路径不在项目源码目录（`PROJECT_ROOT`）内，防止配置文件被误写到项目目录。如果路径在项目内，拒绝写入并记录错误日志。
 
 ### 7. 健康检查
 + **Endpoint**: `GET /api/health` - 返回后端状态、版本号和当前模型名称。
@@ -486,6 +488,7 @@ MEMORY_INDEX_ENABLED=true       # 记忆语义搜索索引开关
 
 + **左侧 (Sidebar)**：导航 (Chat/Memory/Skills/Cache) + 会话列表。
     - 宽度范围：200px ~ 400px（默认 256px），可拖拽调整。
+    - **默认选中最新会话 ✅ 已实现**：页面首次加载时自动选中最近修改的会话（后端按 `st_mtime` 降序排列），替代硬编码的 `main_session` 默认值。
     - 会话标题：最多显示两行，超出截断；无消息的新会话显示「新会话」。
     - 技能列表：每项右侧显示删除按钮（hover 可见），点击弹出确认后删除。
     - **记忆面板 ✅ 已实现**：三 Tab 设计
@@ -536,67 +539,93 @@ MEMORY_INDEX_ENABLED=true       # 记忆语义搜索索引开关
 
 ```plain
 vibeworker/
-├── backend/                # FastAPI + LangChain/LangGraph
-│   ├── app.py              # 入口文件 (Port 8088)
-│   ├── config.py           # Pydantic Settings 配置管理
-│   ├── prompt_builder.py   # System Prompt 动态拼接
-│   ├── sessions_manager.py # 会话管理器
-│   ├── .env                # 环境变量 (API Key 等)
-│   ├── cache/              # 智能缓存系统 ✅
-│   │   ├── __init__.py     # 缓存模块入口（导出全局缓存实例）
-│   │   ├── base.py         # 基础缓存类接口
-│   │   ├── memory_cache.py # L1 内存缓存（LRU + TTL）
-│   │   ├── disk_cache.py   # L2 磁盘缓存（JSON 存储）
-│   │   ├── url_cache.py    # URL 专用缓存
-│   │   ├── llm_cache.py    # LLM 专用缓存（含流式处理）
-│   │   ├── prompt_cache.py # Prompt 拼接缓存
-│   │   ├── translate_cache.py # 翻译缓存
+├── backend/                    # FastAPI + LangChain/LangGraph（只读源码）
+│   ├── app.py                  # 入口文件 (Port 8088)
+│   ├── config.py               # Pydantic Settings（含数据目录安全校验）
+│   ├── prompt_builder.py       # System Prompt 动态拼接
+│   ├── sessions_manager.py     # 会话管理器
+│   ├── memory_manager.py       # 记忆管理中心（MemoryManager 核心类）✅
+│   ├── requirements.txt
+│   ├── user_default/           # 首次运行模板，自动复制到 ~/.vibeworker/
+│   │   ├── .env                # 环境变量模板（API Key 等）
+│   │   ├── mcp_servers.json    # MCP 服务器默认配置
+│   │   ├── memory/
+│   │   │   └── MEMORY.md       # 长期记忆初始模板
+│   │   ├── workspace/          # System Prompt 模板
+│   │   │   ├── SOUL.md         # 核心设定
+│   │   │   ├── IDENTITY.md     # 自我认知
+│   │   │   ├── USER.md         # 用户画像
+│   │   │   └── AGENTS.md       # 行为准则 & 记忆协议
+│   │   └── knowledge/
+│   │       └── README.md       # 知识库说明
+│   ├── cache/                  # 智能缓存系统 ✅
+│   │   ├── __init__.py         # 缓存模块入口（导出全局缓存实例）
+│   │   ├── base.py             # 基础缓存类接口
+│   │   ├── memory_cache.py     # L1 内存缓存（LRU + TTL）
+│   │   ├── disk_cache.py       # L2 磁盘缓存（JSON 存储）
+│   │   ├── url_cache.py        # URL 专用缓存
+│   │   ├── llm_cache.py        # LLM 专用缓存（含流式处理）
+│   │   ├── prompt_cache.py     # Prompt 拼接缓存
+│   │   ├── translate_cache.py  # 翻译缓存
 │   │   └── tool_cache_decorator.py # 通用工具缓存装饰器
-│   ├── store/              # 技能商店模块 ✅
-│   │   ├── __init__.py     # SkillsStore 核心逻辑 (skills.sh 集成)
-│   │   └── models.py       # Pydantic 模型 (RemoteSkill, SkillDetail 等)
-│   ├── memory_manager.py   # 记忆管理中心（MemoryManager 核心类）✅
-│   ├── memory/             # 记忆存储
-│   │   ├── logs/           # Daily Logs（每日日志，YYYY-MM-DD.md）
-│   │   └── MEMORY.md       # 长期记忆（按分类组织的结构化条目）
-│   ├── sessions/           # JSON 会话记录
-│   ├── skills/             # Agent Skills 文件夹 (本地已安装技能)
-│   ├── workspace/          # System Prompts (SOUL.md, AGENTS.md, etc.)
-│   ├── tools/              # Core Tools 实现（7 个内置工具）
-│   │   ├── memory_write_tool.py   # 记忆写入工具 ✅
-│   │   ├── memory_search_tool.py  # 记忆搜索工具 ✅
-│   │   └── ...             # terminal, python_repl, fetch_url, read_file, rag
-│   ├── graph/              # LangGraph Agent 编排
-│   │   └── agent.py        # create_agent 配置
-│   ├── knowledge/          # RAG 知识库文档存放
-│   ├── storage/            # 索引持久化存储
-│   └── requirements.txt
+│   ├── store/                  # 技能商店模块 ✅
+│   │   ├── __init__.py         # SkillsStore 核心逻辑 (skills.sh 集成)
+│   │   └── models.py           # Pydantic 模型 (RemoteSkill, SkillDetail 等)
+│   ├── tools/                  # Core Tools 实现（7 个内置工具，只读）
+│   │   ├── memory_write_tool.py    # 记忆写入工具 ✅
+│   │   ├── memory_search_tool.py   # 记忆搜索工具 ✅
+│   │   └── ...                 # terminal, python_repl, fetch_url, read_file, rag
+│   ├── mcp_module/             # MCP 集成模块（避免与 pip 包冲突）
+│   ├── security/               # 安全沙箱模块
+│   └── graph/                  # LangGraph Agent 编排
+│       └── agent.py            # create_agent 配置
 │
-├── frontend/               # Next.js 14+ (App Router)
+├── ~/.vibeworker/              # 用户数据目录（所有可写数据，与源码隔离）
+│   ├── .env                    # 用户环境变量（首次从 user_default/.env 复制）
+│   ├── mcp_servers.json        # MCP 服务器配置
+│   ├── sessions/               # JSON 会话记录
+│   ├── memory/                 # 记忆存储
+│   │   ├── MEMORY.md           # 长期记忆（按分类组织的结构化条目）
+│   │   └── logs/               # Daily Logs（每日日志，YYYY-MM-DD.md）
+│   ├── skills/                 # Agent Skills（本地已安装技能）
+│   ├── workspace/              # System Prompts (SOUL.md, AGENTS.md, etc.)
+│   ├── knowledge/              # RAG 知识库文档
+│   ├── storage/                # 索引持久化存储
+│   ├── .cache/                 # 缓存存储 (url/ llm/ prompt/ translate/ tool_*/)
+│   └── logs/                   # 应用日志
+│
+├── frontend/                   # Next.js 14+ (App Router)
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── layout.tsx  # 根布局 (字体引入)
-│   │   │   ├── page.tsx    # 三栏可拖拽布局
-│   │   │   └── globals.css # 全局 CSS 主题与组件样式
+│   │   │   ├── layout.tsx      # 根布局 (字体引入)
+│   │   │   ├── page.tsx        # 三栏可拖拽布局
+│   │   │   └── globals.css     # 全局 CSS 主题与组件样式
 │   │   ├── components/
-│   │   │   ├── chat/       # ChatPanel (对话流 + 工具调用可视化)
-│   │   │   ├── sidebar/    # Sidebar (会话/记忆/技能导航 + 商店入口)
-│   │   │   ├── MemoryPanel.tsx    # 记忆面板（三 Tab：记忆/日记/人格）✅
-│   │   │   ├── editor/     # InspectorPanel (Monaco Editor + 翻译功能)
-│   │   │   ├── store/      # 技能商店组件 ✅
+│   │   │   ├── chat/           # ChatPanel (对话流 + 工具调用可视化)
+│   │   │   ├── sidebar/        # Sidebar (会话/记忆/技能导航 + 商店入口)
+│   │   │   ├── MemoryPanel.tsx # 记忆面板（三 Tab：记忆/日记/人格）✅
+│   │   │   ├── editor/         # InspectorPanel (Monaco Editor + 翻译功能)
+│   │   │   ├── store/          # 技能商店组件 ✅
 │   │   │   │   ├── SkillsStoreDialog.tsx  # 商店弹窗主组件
 │   │   │   │   ├── SkillCard.tsx          # 技能卡片
 │   │   │   │   └── SkillDetail.tsx        # 技能详情页
-│   │   │   ├── settings/   # SettingsDialog (模型配置弹窗)
-│   │   │   └── ui/         # Shadcn/UI 基础组件
+│   │   │   ├── settings/       # SettingsDialog (模型配置弹窗)
+│   │   │   └── ui/             # Shadcn/UI 基础组件
 │   │   └── lib/
-│   │       └── api.ts      # API 客户端 (含 Store/Translate API)
+│   │       ├── api.ts          # API 客户端 (含 Store/Translate API)
+│   │       └── sessionStore.ts # 会话状态管理
 │   └── package.json
 │
-├── scripts/                # CLI 工具 ✅
-│   ├── skills.sh           # Linux/macOS 技能管理脚本
-│   └── skills.bat          # Windows 技能管理脚本
+├── scripts/                    # CLI 工具 ✅
+│   ├── skills.sh               # Linux/macOS 技能管理脚本
+│   └── skills.bat              # Windows 技能管理脚本
 │
 └── README.md
 ```
+
+**数据目录隔离说明：**
+- `backend/` 为只读源码目录（`PROJECT_ROOT`），不存储任何用户数据
+- `~/.vibeworker/` 为用户数据目录（`DATA_DIR`），可通过环境变量自定义
+- 首次运行时，`config.py` 自动将 `user_default/` 下的模板复制到 `~/.vibeworker/`
+- 安全校验：`DATA_DIR` 不允许指向 `PROJECT_ROOT` 内部，否则自动回退到 `~/.vibeworker/`
 
