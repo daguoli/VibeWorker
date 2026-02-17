@@ -180,6 +180,7 @@ async def _run_agent_no_cache(
 
         async for event in agent.astream_events(input_state, version="v2", config=config):
             kind = event.get("event", "")
+            metadata = event.get("metadata", {})
 
             if kind == "on_chat_model_stream":
                 # Token-level streaming
