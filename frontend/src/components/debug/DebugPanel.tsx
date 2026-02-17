@@ -28,15 +28,15 @@ function DividerCard({ call }: { call: DebugDivider }) {
     : call.userMessage;
 
   return (
-    <div className="my-4 py-3 border-t-2 border-dashed border-muted-foreground/30">
-      <div className="flex items-start gap-3 text-xs">
+    <div className="my-3 py-2.5 rounded-md bg-blue-50/80 dark:bg-blue-950/40">
+      <div className="flex items-start gap-2.5 px-2.5 text-xs">
         <span className="shrink-0 text-lg">&#x1F4AC;</span>
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-foreground/90 mb-1">New Request</div>
-          <div className="text-muted-foreground/70 truncate font-mono text-[11px] mb-1">
+          <div className="font-medium text-blue-700 dark:text-blue-300 mb-1">用户请求</div>
+          <div className="text-blue-600/80 dark:text-blue-400/80 truncate font-mono text-[11px] mb-1">
             {truncatedMessage}
           </div>
-          <div className="text-[10px] text-muted-foreground/50">
+          <div className="text-[10px] text-blue-500/60 dark:text-blue-500/50">
             {timeStr}
           </div>
         </div>
