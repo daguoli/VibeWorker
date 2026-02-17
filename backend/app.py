@@ -300,8 +300,22 @@ async def _stream_agent_response(message: str, history: list, session_id: str, d
                         "type": "tool_start",
                         "tool": event["tool"],
                         "input": event.get("input", ""),
+                        "motivation": event.get("motivation", ""),  # Forward motivation
                     }, ensure_ascii=False)
                     yield f"data: {sse_data}\n\n"
+                    # Track for persistence (will be updated by tool_end)
+                    if debug:
+                        from datetime import datetime
+                        debug_calls_log.append({
+                            "tool": event["tool"],
+                            "input": event.get("input", ""),
+                            "output": "",  # Empty means in-progress
+                            "duration_ms": None,
+                            "cached": False,
+                            "timestamp": datetime.now().isoformat(),
+                            "_inProgress": True,
+                            "motivation": event.get("motivation", ""),  # Save motivation
+                        })
 
                 elif event_type == "tool_end":
                     is_cached = event.get("cached", False)
@@ -321,7 +335,18 @@ async def _stream_agent_response(message: str, history: list, session_id: str, d
                     sse_data = json.dumps(tool_end_data, ensure_ascii=False)
                     yield f"data: {sse_data}\n\n"
                     if debug and event.get("duration_ms") is not None:
-                        debug_calls_log.append(tool_end_data)
+                        # Update in-progress tool call with final data
+                        for i in range(len(debug_calls_log) - 1, -1, -1):
+                            call = debug_calls_log[i]
+                            if call.get("tool") == event["tool"] and call.get("_inProgress"):
+                                debug_calls_log[i] = {
+                                    **call,
+                                    "output": event.get("output", "")[:1000],
+                                    "duration_ms": event.get("duration_ms"),
+                                    "cached": is_cached,
+                                    "_inProgress": False,
+                                }
+                                break
 
                 elif event_type == "debug_llm_call":
                     sse_data = json.dumps(event, ensure_ascii=False)
@@ -380,6 +405,7 @@ async def _stream_agent_response(message: str, history: list, session_id: str, d
                             "output": "",
                             "timestamp": datetime.now().isoformat(),
                             "_inProgress": True,
+                            "motivation": event.get("motivation", ""),  # Save motivation
                         })
 
                 elif event_type == "llm_end":
