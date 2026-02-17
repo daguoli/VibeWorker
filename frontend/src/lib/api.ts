@@ -77,6 +77,7 @@ export interface DebugLLMCall {
   output: string;
   timestamp: string;
   _inProgress?: boolean;  // Internal flag for in-progress state
+  motivation?: string;    // Agent's motivation/explanation for this call
 }
 
 export interface DebugToolCall {
@@ -87,6 +88,7 @@ export interface DebugToolCall {
   cached: boolean;
   timestamp: string;
   _inProgress?: boolean;  // Internal flag for in-progress state
+  motivation?: string;    // Agent's motivation/explanation for this tool call
 }
 
 // Divider card for separating multiple conversations in the same session
@@ -106,6 +108,7 @@ export interface SSEEvent {
   output?: string;
   cached?: boolean;  // Cache indicator
   duration_ms?: number;  // Tool/LLM duration
+  motivation?: string;  // Agent's motivation/explanation
   // Approval request fields
   request_id?: string;
   risk_level?: "safe" | "warn" | "dangerous" | "blocked";

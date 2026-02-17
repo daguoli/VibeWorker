@@ -202,6 +202,16 @@ async def _run_agent_no_cache(
                     "node": node,
                     "input": input_messages,
                 }
+
+                # Generate motivation text based on node type
+                motivation_map = {
+                    "planner": "调用大模型进行任务规划",
+                    "executor": "调用大模型执行具体操作",
+                    "replan": "重新分析并调整计划",
+                    "agent": "调用大模型进行推理",
+                }
+                motivation = motivation_map.get(node, "调用大模型处理请求")
+
                 # Send LLM start event for real-time debug display
                 from model_pool import resolve_model
                 model_name = resolve_model("llm").get("model", "unknown")
@@ -211,6 +221,7 @@ async def _run_agent_no_cache(
                     "node": node,
                     "model": model_name,
                     "input": input_messages[:5000],
+                    "motivation": motivation,  # 新增动机场
                 }
 
             elif kind == "on_chat_model_end":
@@ -291,10 +302,27 @@ async def _run_agent_no_cache(
                     debug_tracking[f"tool_{run_id}"] = {"start_time": time.time()}
                 tool_name = event.get("name", "")
                 tool_input = event.get("data", {}).get("input", {})
+
+                # Generate motivation text based on tool name
+                tool_motivation_map = {
+                    "read_file": "读取文件内容",
+                    "write_file": "写入文件",
+                    "terminal": "执行终端命令",
+                    "python_repl": "执行 Python 代码",
+                    "search_knowledge_base": "搜索知识库",
+                    "memory_search": "搜索记忆",
+                    "memory_write": "写入记忆",
+                    "fetch_url": "获取网页内容",
+                    "plan_create": "创建任务计划",
+                    "plan_update": "更新任务计划",
+                }
+                motivation = tool_motivation_map.get(tool_name, f"调用工具：{tool_name}")
+
                 yield {
                     "type": "tool_start",
                     "tool": tool_name,
                     "input": str(tool_input),
+                    "motivation": motivation,  # 新增动机场
                 }
 
             elif kind == "on_tool_end":

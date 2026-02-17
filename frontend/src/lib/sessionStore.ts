@@ -219,6 +219,7 @@ class SessionStore {
                   cached: false,
                   timestamp: new Date().toISOString(),
                   _inProgress: true,  // Flag for in-progress state
+                  motivation: event.motivation || "",  // Agent's motivation
                 } as DebugToolCall & { _inProgress?: boolean }],
               });
             }
@@ -320,6 +321,7 @@ class SessionStore {
                   output: "",  // Empty means in-progress
                   timestamp: new Date().toISOString(),
                   _inProgress: true,
+                  motivation: event.motivation || "",  // Agent's motivation
                 } as DebugLLMCall],
               });
             }

@@ -45,6 +45,19 @@ function DividerCard({ call }: { call: DebugDivider }) {
   );
 }
 
+// ---- Motivation Card ----
+function MotivationCard({ text }: { text: string }) {
+  if (!text) return null;
+  return (
+    <div className="my-2 py-1.5 px-3 rounded-md bg-muted/50">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="text-[10px]">&#x275D;</span>
+        <span>{text}</span>
+      </div>
+    </div>
+  );
+}
+
 // ---- Debug Call Item ----
 function DebugCallItem({ call }: { call: DebugLLMCall | DebugToolCall }) {
   // Always collapsed by default
@@ -269,9 +282,16 @@ export default function DebugPanel({ sessionId, onClose }: DebugPanelProps) {
         ) : (
           <>
             {debugCalls.map((call, index) => (
-              isDivider(call)
-                ? <DividerCard key={index} call={call} />
-                : <DebugCallItem key={index} call={call} />
+              <React.Fragment key={index}>
+                {isDivider(call) ? (
+                  <DividerCard call={call} />
+                ) : (
+                  <>
+                    <MotivationCard text={call.motivation || ""} />
+                    <DebugCallItem call={call} />
+                  </>
+                )}
+              </React.Fragment>
             ))}
           </>
         )}
