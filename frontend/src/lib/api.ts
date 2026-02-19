@@ -82,6 +82,7 @@ export interface DebugLLMCall {
   total_tokens: number | null;
   input: string;
   output: string;
+  reasoning?: string;     // 推理模型的 <think> 内容
   timestamp: string;
   _inProgress?: boolean;  // Internal flag for in-progress state
   motivation?: string;    // Agent's motivation/explanation for this call
@@ -135,6 +136,7 @@ export interface SSEEvent {
   input_tokens?: number;
   output_tokens?: number;
   total_tokens?: number;
+  reasoning?: string;     // 推理模型的 <think> 内容
 }
 
 // ============================================

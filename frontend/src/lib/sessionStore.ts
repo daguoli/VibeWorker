@@ -398,6 +398,7 @@ class SessionStore {
                     total_tokens: event.total_tokens ?? null,
                     input: event.input || call.input,  // Update input from llm_end event
                     output: event.output || "",
+                    reasoning: event.reasoning || undefined,
                     _inProgress: false,
                   };
                   break;

@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import { Bug, X, ChevronRight, ChevronDown } from "lucide-react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { Bug, X, ChevronRight, ChevronDown, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { sessionStore, useSessionState } from "@/lib/sessionStore";
 import type { DebugCall, DebugDivider, DebugLLMCall, DebugToolCall } from "@/lib/api";
@@ -150,6 +150,17 @@ function DebugCallItem({ call }: { call: DebugLLMCall | DebugToolCall }) {
                 {call.input || "(empty)"}
               </pre>
             </div>
+            {/* Reasoning — 推理模型的思考过程 */}
+            {call.reasoning && (
+              <div>
+                <div className="text-[10px] font-medium text-purple-500/80 uppercase tracking-wider mb-1">
+                  Reasoning ({call.reasoning.length} chars)
+                </div>
+                <pre className="text-[11px] font-mono whitespace-pre-wrap break-all bg-purple-50/50 dark:bg-purple-950/30 border border-purple-200/40 dark:border-purple-800/30 rounded-md p-2 max-h-[300px] overflow-auto text-foreground/70">
+                  {call.reasoning}
+                </pre>
+              </div>
+            )}
             {/* Output */}
             <div>
               <div className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider mb-1">Output</div>
@@ -256,6 +267,14 @@ interface DebugPanelProps {
 export default function DebugPanel({ sessionId, onClose }: DebugPanelProps) {
   const { debugCalls, isStreaming } = useSessionState(sessionId);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopySessionId = useCallback(() => {
+    navigator.clipboard.writeText(sessionId).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [sessionId]);
 
   // Auto-scroll to bottom during streaming with smooth behavior
   const prevLengthRef = useRef(0);
@@ -274,7 +293,7 @@ export default function DebugPanel({ sessionId, onClose }: DebugPanelProps) {
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border/40 shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 group">
           <Bug className="w-4 h-4 text-muted-foreground" />
           <span className="text-xs font-medium">Debug</span>
           {debugCalls.length > 0 && (
@@ -282,6 +301,18 @@ export default function DebugPanel({ sessionId, onClose }: DebugPanelProps) {
               {debugCalls.length}
             </span>
           )}
+          <span
+            className="text-[10px] font-mono text-muted-foreground/60 cursor-pointer hover:text-muted-foreground truncate max-w-[140px] flex items-center gap-1"
+            title={`Session: ${sessionId} (点击复制)`}
+            onClick={handleCopySessionId}
+          >
+            {sessionId}
+            {copied ? (
+              <Check className="w-3 h-3 text-green-500 shrink-0" />
+            ) : (
+              <Copy className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-100" />
+            )}
+          </span>
         </div>
         <Button
           variant="ghost"
