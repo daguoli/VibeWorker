@@ -525,7 +525,10 @@ class SessionStore {
       }
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        // Normal cancellation — do nothing
+        // 用户主动中断，标记内容被截断（与后端保存的标记一致）
+        if (fullContent) {
+          fullContent += "\n\n⚠️ [回复被中断]";
+        }
       } else {
         fullContent += `\n\n❌ Connection error: ${err}`;
       }
@@ -549,24 +552,34 @@ class SessionStore {
         };
       }
     }
-    const assistantMsg: ChatMessage = {
-      role: "assistant",
-      content: fullContent,
-      timestamp: new Date().toISOString(),
-      tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-      segments: segments.length > 0 ? segments : undefined,
-      plan: finalPlan || undefined,
-    };
-
+    // 只在有实际内容或工具调用时追加 assistant 消息，避免空消息
     const currentMessages = finalState.messages;
-    this.updateSession(sessionId, {
-      messages: [...currentMessages, assistantMsg],
-      isStreaming: false,
-      streamingContent: "",
-      streamingSegments: [],
-      thinkingSteps: [],
-      currentPlan: null,
-    });
+    if (fullContent || toolCalls.length > 0) {
+      const assistantMsg: ChatMessage = {
+        role: "assistant",
+        content: fullContent,
+        timestamp: new Date().toISOString(),
+        tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+        segments: segments.length > 0 ? segments : undefined,
+        plan: finalPlan || undefined,
+      };
+      this.updateSession(sessionId, {
+        messages: [...currentMessages, assistantMsg],
+        isStreaming: false,
+        streamingContent: "",
+        streamingSegments: [],
+        thinkingSteps: [],
+        currentPlan: null,
+      });
+    } else {
+      this.updateSession(sessionId, {
+        isStreaming: false,
+        streamingContent: "",
+        streamingSegments: [],
+        thinkingSteps: [],
+        currentPlan: null,
+      });
+    }
 
     this.abortControllers.delete(sessionId);
 

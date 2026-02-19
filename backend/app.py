@@ -301,6 +301,8 @@ async def _stream_agent_response(message: str, history: list, session_id: str, d
     # 按时间顺序积累的消息片段（文本+工具交替），用于前端穿插显示
     segments_log: list = []
     current_plan = None
+    # 标记是否已通过 done 事件正常保存，用于中断时判断是否需要补救保存
+    saved_via_done = False
 
     # 后台任务：泵送 agent 事件到输出队列
     async def pump_agent_events():
@@ -392,6 +394,7 @@ async def _stream_agent_response(message: str, history: list, session_id: str, d
                         segments=segments_log if segments_log else None,
                         plan=current_plan,
                     )
+                    saved_via_done = True
 
                 # 自动提取记忆
                 if settings.memory_auto_extract:
@@ -417,6 +420,22 @@ async def _stream_agent_response(message: str, history: list, session_id: str, d
             await pump_task
         except (asyncio.CancelledError, Exception):
             pass
+
+        # 中断/异常时补救保存：如果有已累积的内容但未通过 done 正常保存，
+        # 则将中间状态持久化，防止刷新后丢失已输出的内容
+        if not saved_via_done and (full_response or tool_calls_log):
+            try:
+                # 在内容末尾追加中断标记，让用户知道这条回复未完整
+                interrupted_content = full_response + "\n\n⚠️ [回复被中断]"
+                session_manager.save_message(
+                    session_id, "assistant", interrupted_content,
+                    tool_calls=tool_calls_log if tool_calls_log else None,
+                    segments=segments_log if segments_log else None,
+                    plan=current_plan,
+                )
+                logger.info(f"已保存中断的 assistant 回复 (session={session_id}, len={len(full_response)})")
+            except Exception as save_err:
+                logger.error(f"中断保存失败: {save_err}", exc_info=True)
 
 
 # ============================================
