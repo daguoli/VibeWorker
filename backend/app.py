@@ -17,7 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
-from config import settings, PROJECT_ROOT, reload_settings
+from config import settings, PROJECT_ROOT, reload_settings, read_text_smart
 from sessions_manager import session_manager
 from session_context import set_session_id, set_run_context
 from engine.runner import run_agent
@@ -486,13 +486,7 @@ async def read_file(path: str = Query(..., description="Relative file path")):
         raise HTTPException(status_code=400, detail="Path is not a file")
 
     try:
-        # 优先 UTF-8，失败则尝试 GBK，最终用 latin-1 兜底（永不报错）
-        for enc in ("utf-8", "gbk", "latin-1"):
-            try:
-                content = file_path.read_text(encoding=enc)
-                break
-            except (UnicodeDecodeError, ValueError):
-                continue
+        content = read_text_smart(file_path)
         return {"path": path, "content": content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading file: {e}")

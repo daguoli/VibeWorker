@@ -3,16 +3,16 @@ from pathlib import Path
 from typing import Optional
 import logging
 
-from config import settings, PROJECT_ROOT
+from config import settings, PROJECT_ROOT, read_text_smart
 
 logger = logging.getLogger(__name__)
 
 
 def _read_file_safe(path: Path, max_chars: Optional[int] = None) -> str:
-    """Read a file safely, returning empty string if not found."""
+    """安全读取文件，自动处理编码，找不到时返回空字符串。"""
     if not path.exists():
         return ""
-    content = path.read_text(encoding="utf-8")
+    content = read_text_smart(path)
     if max_chars and len(content) > max_chars:
         content = content[:max_chars] + "\n\n...[truncated]"
     return content
@@ -61,10 +61,12 @@ def generate_skills_snapshot() -> str:
 
 
 def _parse_skill_frontmatter(skill_md: Path) -> tuple[str, str]:
-    """Parse YAML frontmatter from a SKILL.md file."""
+    """解析 SKILL.md 的 YAML frontmatter，自动处理文件编码。"""
     try:
         import frontmatter
-        post = frontmatter.load(str(skill_md))
+        # 用 read_text_smart 处理编码后，再解析 frontmatter
+        content = read_text_smart(skill_md)
+        post = frontmatter.loads(content)
         name = post.get("name", "")
         description = post.get("description", "")
         return name, description

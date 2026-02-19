@@ -212,6 +212,29 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+def read_text_smart(path: Path, *, auto_fix: bool = True) -> str:
+    """智能读取文本文件，自动处理编码问题。
+
+    按 UTF-8 → GBK → latin-1 顺序尝试解码。
+    若文件不是 UTF-8 且 auto_fix=True，则自动回写为 UTF-8，
+    从源头消除编码不一致，确保下游所有 UTF-8 读取路径不再出错。
+    """
+    raw = path.read_bytes()
+    for enc in ("utf-8", "gbk"):
+        try:
+            content = raw.decode(enc)
+            if enc != "utf-8" and auto_fix:
+                try:
+                    path.write_text(content, encoding="utf-8")
+                except OSError:
+                    pass  # 只读文件或权限不足，跳过回写
+            return content
+        except (UnicodeDecodeError, ValueError):
+            continue
+    # latin-1 兜底（永不抛异常，但可能乱码）
+    return raw.decode("latin-1")
+
+
 def reload_settings() -> None:
     """Reload settings from .env file into the existing settings singleton.
 

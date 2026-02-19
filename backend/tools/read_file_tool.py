@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from langchain_core.tools import tool
-from config import PROJECT_ROOT, settings
+from config import PROJECT_ROOT, settings, read_text_smart
 from security.classifier import classify_file_path, RiskLevel
 
 
@@ -70,16 +70,13 @@ def read_file(file_path: str) -> str:
         if not path.is_file():
             return f"❌ Error: Path is not a file: {file_path}"
 
-        content = path.read_text(encoding="utf-8")
+        content = read_text_smart(path)
 
-        # Limit output for very large files
+        # 限制超大文件输出
         if len(content) > 20000:
             content = content[:20000] + "\n\n...[file content truncated at 20000 chars]"
 
         return content
-
-    except UnicodeDecodeError:
-        return f"❌ Error: File is not a text file or has encoding issues: {file_path}"
     except Exception as e:
         return f"❌ Error reading file: {str(e)}"
 
