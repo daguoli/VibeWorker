@@ -36,7 +36,7 @@ cd frontend && npm run build
 
 ### 1. Agent 编排引擎（混合架构）
 
-**文件：** `backend/graph/agent.py`
+**目录：** `backend/engine/`（Agent 编排引擎，详见 `engine/ARCHITECTURE.md`）
 
 - ✅ **必须**用 `langchain.agents.create_agent` API（LangChain 1.0+）
 - ❌ **严禁**用旧版 `AgentExecutor` 或早期 `create_react_agent`
@@ -291,7 +291,7 @@ backend/
 ├── workspace/              # SOUL.md, IDENTITY.md, USER.md, AGENTS.md
 ├── tools/                  # 7 个 Core Tools + __init__.py (get_all_tools)
 ├── mcp_module/             # __init__.py, config.py, manager.py, tool_wrapper.py
-├── graph/agent.py          # 混合 Agent 架构（Phase 1 + Phase 2）
+├── engine/                 # Agent 编排引擎（Phase 1 + Phase 2，详见 engine/ARCHITECTURE.md）
 ├── cache/                  # L1+L2 缓存模块 + tool_cache_decorator.py
 ├── .cache/                 # 缓存存储 (url/ llm/ prompt/ translate/ tool_mcp_*/)
 ├── knowledge/              # RAG 文档
@@ -306,6 +306,8 @@ frontend/src/
 ---
 
 ## 开发指南
+
+**基础配置修改：** 修改所有通用配置文件的时候需要检查user_default/init_user.md文件，确保初始化配置同步
 
 **添加 Tool：** `backend/tools/{name}_tool.py` → `__init__.py` 导出 → `get_all_tools()` 添加
 
@@ -324,11 +326,32 @@ frontend/src/
 
 ---
 
+## 代码规范
+
+**注释语言：** 所有代码注释（行内注释、块注释）和 docstring **必须使用中文**。技术术语、变量名、API 名称等标识符保持英文原文。
+
+示例：
+```python
+# ✅ 正确
+def get_llm(streaming: bool = True) -> ChatOpenAI:
+    """获取或创建 ChatOpenAI 实例。配置未变时复用缓存。"""
+    # 根据配置指纹判断是否需要创建新实例
+    fp = _config_fingerprint()
+
+# ❌ 错误
+def get_llm(streaming: bool = True) -> ChatOpenAI:
+    """Get or create a ChatOpenAI instance."""
+    # Check config fingerprint
+    fp = _config_fingerprint()
+```
+
+---
+
 ## 约束
 
-✅ 用 LangChain 1.x `create_agent` | Skills 含 Frontmatter | 文件存储优先 | `mcp_module/` 避免包名冲突
+✅ 用 LangChain 1.x `create_agent` | Skills 含 Frontmatter | 文件存储优先 | `mcp_module/` 避免包名冲突 | 所有注释使用中文
 
-❌ 旧版 AgentExecutor | 数据库存 Session/Memory | Skills 无 Frontmatter | Prompt 中写 Python 调用
+❌ 旧版 AgentExecutor | 数据库存 Session/Memory | Skills 无 Frontmatter | Prompt 中写 Python 调用 | 英文注释
 
 ---
 

@@ -18,13 +18,16 @@ import uvicorn
 
 from config import settings, PROJECT_ROOT, reload_settings
 from sessions_manager import session_manager
-from session_context import set_session_id
-from graph.agent import run_agent, set_sse_approval_callback
-from tools.plan_tool import set_plan_sse_callback, set_plan_event_loop
+from session_context import set_session_id, set_run_context
+from engine.runner import run_agent
+from engine.context import RunContext
+from engine.events import serialize_sse
+from engine.middleware import DebugMiddleware, DebugLevel
+from engine import events
 from tools.rag_tool import rebuild_index
 from memory_manager import memory_manager
 
-# Configure logging
+# 配置日志
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -33,7 +36,7 @@ logger = logging.getLogger("vibeworker")
 
 
 # ============================================
-# Lifespan Event Handler
+# 生命周期事件处理
 # ============================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -111,7 +114,7 @@ async def lifespan(app: FastAPI):
 
 
 # ============================================
-# FastAPI Application
+# FastAPI 应用
 # ============================================
 app = FastAPI(
     title="VibeWorker API",
@@ -120,7 +123,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS - Allow frontend (Next.js dev server)
+# CORS - 允许前端 (Next.js 开发服务器)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -136,7 +139,7 @@ app.add_middleware(
 
 
 # ============================================
-# Request/Response Models
+# 请求/响应模型
 # ============================================
 class ChatRequest(BaseModel):
     message: str
@@ -155,7 +158,7 @@ class SessionCreateRequest(BaseModel):
 
 
 # ============================================
-# API Routes: Chat
+# 对话端点
 # ============================================
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
@@ -190,17 +193,23 @@ async def chat(request: ChatRequest):
         )
     else:
         # Non-streaming mode
+        ctx = RunContext(session_id=request.session_id, debug=False, stream=False)
+        set_run_context(ctx)
+
         full_response = ""
         tool_calls_log = []
-        async for event in run_agent(request.message, history, stream=False):
-            if event["type"] == "message":
-                full_response = event["content"]
-            elif event["type"] == "tool_start":
+        async for event in run_agent(request.message, history, ctx):
+            event_type = event.get("type", "")
+            if event_type == "message":
+                full_response = event.get("content", "")
+            elif event_type == "token":
+                full_response += event.get("content", "")
+            elif event_type == "tool_start":
                 tool_calls_log.append({
                     "tool": event["tool"],
                     "input": event.get("input", ""),
                 })
-            elif event["type"] == "tool_end":
+            elif event_type == "tool_end":
                 is_cached = event.get("cached", False)
                 for tc in tool_calls_log:
                     if tc["tool"] == event["tool"] and "output" not in tc:
@@ -209,7 +218,6 @@ async def chat(request: ChatRequest):
                             tc["cached"] = True
                         break
 
-        # Save assistant response
         session_manager.save_message(
             request.session_id, "assistant", full_response,
             tool_calls=tool_calls_log if tool_calls_log else None,
@@ -223,273 +231,115 @@ async def chat(request: ChatRequest):
 
 
 async def _stream_agent_response(message: str, history: list, session_id: str, debug: bool = False):
-    """Generator for SSE streaming."""
-    # Restore session context inside the async generator
+    """Generator for SSE streaming — simplified via RunContext + Middleware."""
+    # Build per-request context (replaces 5 global set_xxx calls)
+    ctx = RunContext(
+        session_id=session_id,
+        debug=debug,
+        event_loop=asyncio.get_event_loop(),
+    )
+    set_run_context(ctx)
     set_session_id(session_id)
+
+    # Security gate SSE callback (still uses approval_queue on ctx)
+    try:
+        from security import security_gate
+        security_gate.set_sse_callback(
+            lambda data: ctx.approval_queue.put_nowait(data)
+        )
+    except Exception:
+        pass
+
+    # Debug middleware handles all tracing + persistence
+    debug_level = DebugLevel.STANDARD if debug else DebugLevel.OFF
+    debug_mw = DebugMiddleware(level=debug_level)
 
     full_response = ""
     tool_calls_log = []
-    debug_calls_log = []  # Collect debug events for persistence
-    current_plan = None  # Track plan state for persistence
-
-    # Queue for approval requests from SecurityGate
-    approval_queue: asyncio.Queue = asyncio.Queue()
-
-    async def sse_approval_callback(event_data: dict):
-        """Callback invoked by SecurityGate to send approval requests via SSE."""
-        await approval_queue.put(event_data)
-
-    # Queue for plan events from Plan tools
-    plan_queue: asyncio.Queue = asyncio.Queue()
-
-    async def sse_plan_callback(event_data: dict):
-        """Callback invoked by plan tools to send plan events via SSE."""
-        await plan_queue.put(event_data)
-
-    # Register SSE callbacks
-    set_sse_approval_callback(sse_approval_callback)
-    set_plan_sse_callback(sse_plan_callback)
-    set_plan_event_loop(asyncio.get_event_loop())
+    current_plan = None
 
     try:
-        # Wrap the agent stream to interleave approval events
-        agent_gen = run_agent(message, history, stream=True, debug=debug)
-        agent_task = asyncio.ensure_future(_next_event(agent_gen))
+        async for event in run_agent(message, history, ctx, middlewares=[debug_mw]):
+            event_type = event.get("type", "")
 
-        while True:
-            # Check for approval events in queue
-            while not approval_queue.empty():
-                try:
-                    approval_event = approval_queue.get_nowait()
-                    sse_data = json.dumps(approval_event, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-                except asyncio.QueueEmpty:
-                    break
-
-            # Check for plan events in queue
-            while not plan_queue.empty():
-                try:
-                    plan_event = plan_queue.get_nowait()
-                    sse_data = json.dumps(plan_event, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-                except asyncio.QueueEmpty:
-                    break
-
-            # Wait for next agent event or approval event
-            if agent_task.done():
-                try:
-                    event = agent_task.result()
-                except StopAsyncIteration:
-                    break
-
-                # Process the agent event (same as before)
-                event_type = event.get("type", "")
-
-                if event_type == "token":
-                    content = event.get("content", "")
-                    full_response += content
-                    sse_data = json.dumps({"type": "token", "content": content}, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-
-                elif event_type == "tool_start":
-                    tool_calls_log.append({
-                        "tool": event["tool"],
-                        "input": event.get("input", ""),
-                    })
-                    sse_data = json.dumps({
-                        "type": "tool_start",
-                        "tool": event["tool"],
-                        "input": event.get("input", ""),
-                        "motivation": event.get("motivation", ""),  # Forward motivation
-                    }, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-                    # Track for persistence (will be updated by tool_end)
-                    if debug:
-                        from datetime import datetime
-                        debug_calls_log.append({
-                            "tool": event["tool"],
-                            "input": event.get("input", ""),
-                            "output": "",  # Empty means in-progress
-                            "duration_ms": None,
-                            "cached": False,
-                            "timestamp": datetime.now().isoformat(),
-                            "_inProgress": True,
-                            "motivation": event.get("motivation", ""),  # Save motivation
-                        })
-
-                elif event_type == "tool_end":
-                    is_cached = event.get("cached", False)
-                    for tc in tool_calls_log:
-                        if tc["tool"] == event["tool"] and "output" not in tc:
-                            tc["output"] = event.get("output", "")
-                            if is_cached:
-                                tc["cached"] = True
-                            break
-                    tool_end_data = {
-                        "type": "tool_end",
-                        "tool": event["tool"],
-                        "output": event.get("output", "")[:1000],
-                        "cached": is_cached,
-                        "duration_ms": event.get("duration_ms"),
-                    }
-                    sse_data = json.dumps(tool_end_data, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-                    if debug and event.get("duration_ms") is not None:
-                        # Update in-progress tool call with final data
-                        for i in range(len(debug_calls_log) - 1, -1, -1):
-                            call = debug_calls_log[i]
-                            if call.get("tool") == event["tool"] and call.get("_inProgress"):
-                                debug_calls_log[i] = {
-                                    **call,
-                                    "output": event.get("output", "")[:1000],
-                                    "duration_ms": event.get("duration_ms"),
-                                    "cached": is_cached,
-                                    "_inProgress": False,
-                                }
-                                break
-
-                elif event_type == "debug_llm_call":
-                    sse_data = json.dumps(event, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-                    debug_calls_log.append(event)
-
-                elif event_type == "plan_created":
-                    # Track plan state for persistence
-                    if event.get("plan"):
-                        current_plan = event["plan"]
-                    sse_data = json.dumps(event, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-
-                elif event_type == "plan_updated":
-                    # Update plan state
-                    if current_plan and current_plan.get("plan_id") == event.get("plan_id"):
-                        # Update step status
-                        step_id = event.get("step_id")
-                        status = event.get("status")
-                        if step_id and status:
-                            current_plan["steps"] = [
-                                {**s, "status": status} if s.get("id") == step_id else s
-                                for s in current_plan.get("steps", [])
-                            ]
-                    sse_data = json.dumps(event, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-
-                elif event_type == "plan_revised":
-                    # Update plan with revised steps
-                    if current_plan and current_plan.get("plan_id") == event.get("plan_id"):
-                        revised_steps = event.get("revised_steps", [])
-                        keep_completed = event.get("keep_completed", 0)
-                        if revised_steps:
-                            # Keep completed steps and add revised ones
-                            completed_steps = current_plan.get("steps", [])[:keep_completed]
-                            current_plan["steps"] = completed_steps + revised_steps
-                    sse_data = json.dumps(event, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-
-                elif event_type == "llm_start":
-                    # Forward LLM start event for real-time debug display
-                    sse_data = json.dumps(event, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-                    # Track for persistence
-                    if debug:
-                        from datetime import datetime
-                        debug_calls_log.append({
-                            "call_id": event.get("call_id", ""),
-                            "node": event.get("node", ""),
-                            "model": event.get("model", ""),
-                            "duration_ms": None,
-                            "input_tokens": None,
-                            "output_tokens": None,
-                            "total_tokens": None,
-                            "input": event.get("input", ""),
-                            "output": "",
-                            "timestamp": datetime.now().isoformat(),
-                            "_inProgress": True,
-                            "motivation": event.get("motivation", ""),  # Save motivation
-                        })
-
-                elif event_type == "llm_end":
-                    # Update in-progress LLM call with final data
-                    if debug:
-                        for i in range(len(debug_calls_log) - 1, -1, -1):
-                            call = debug_calls_log[i]
-                            if call.get("call_id") == event.get("call_id") and call.get("_inProgress"):
-                                debug_calls_log[i] = {
-                                    **call,
-                                    "duration_ms": event.get("duration_ms"),
-                                    "input_tokens": event.get("input_tokens"),
-                                    "output_tokens": event.get("output_tokens"),
-                                    "total_tokens": event.get("total_tokens"),
-                                    "output": event.get("output", ""),
-                                    "_inProgress": False,
-                                }
-                                break
-                    sse_data = json.dumps(event, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-
-                elif event_type == "done":
-                    # Save assistant response to session
-                    if full_response:
-                        session_manager.save_message(
-                            session_id, "assistant", full_response,
-                            tool_calls=tool_calls_log if tool_calls_log else None,
-                            plan=current_plan,
-                        )
-
-                    # Save debug calls if any
-                    if debug_calls_log:
-                        session_manager.save_debug_calls(session_id, debug_calls_log)
-
-                    # Auto-extract memories if enabled
-                    if settings.memory_auto_extract:
-                        try:
-                            recent_messages = session_manager.get_session(session_id)[-6:]
-                            asyncio.create_task(memory_manager.auto_extract(recent_messages))
-                        except Exception as e:
-                            logger.warning(f"Auto-extract hook failed: {e}")
-
-                    sse_data = json.dumps({"type": "done"}, ensure_ascii=False)
-                    yield f"data: {sse_data}\n\n"
-                    break
-
-                # Start next event fetch
-                agent_task = asyncio.ensure_future(_next_event(agent_gen))
-            else:
-                # Wait a bit before checking again
-                await asyncio.sleep(0.01)
-                # Also flush any pending approval events
-                while not approval_queue.empty():
+            # Drain side-channel queues (plan events + approval events)
+            for q in (ctx.plan_queue, ctx.approval_queue):
+                while not q.empty():
                     try:
-                        approval_event = approval_queue.get_nowait()
-                        sse_data = json.dumps(approval_event, ensure_ascii=False)
-                        yield f"data: {sse_data}\n\n"
+                        yield serialize_sse(q.get_nowait())
                     except asyncio.QueueEmpty:
                         break
-                # Also flush any pending plan events
-                while not plan_queue.empty():
-                    try:
-                        plan_event = plan_queue.get_nowait()
-                        sse_data = json.dumps(plan_event, ensure_ascii=False)
-                        yield f"data: {sse_data}\n\n"
-                    except asyncio.QueueEmpty:
+
+            # Accumulate data for session persistence
+            if event_type == "token":
+                full_response += event.get("content", "")
+            elif event_type == "tool_start":
+                tool_calls_log.append({
+                    "tool": event["tool"],
+                    "input": event.get("input", ""),
+                })
+            elif event_type == "tool_end":
+                is_cached = event.get("cached", False)
+                for tc in reversed(tool_calls_log):
+                    if tc["tool"] == event["tool"] and "output" not in tc:
+                        tc["output"] = event.get("output", "")
+                        if is_cached:
+                            tc["cached"] = True
                         break
+            elif event_type == "plan_created":
+                if event.get("plan"):
+                    current_plan = event["plan"]
+            elif event_type == "plan_updated":
+                if current_plan and current_plan.get("plan_id") == event.get("plan_id"):
+                    step_id = event.get("step_id")
+                    status = event.get("status")
+                    if step_id and status:
+                        current_plan["steps"] = [
+                            {**s, "status": status} if s.get("id") == step_id else s
+                            for s in current_plan.get("steps", [])
+                        ]
+            elif event_type == "plan_revised":
+                if current_plan and current_plan.get("plan_id") == event.get("plan_id"):
+                    revised_steps = event.get("revised_steps", [])
+                    keep_completed = event.get("keep_completed", 0)
+                    if revised_steps:
+                        completed_steps = current_plan.get("steps", [])[:keep_completed]
+                        current_plan["steps"] = completed_steps + revised_steps
+
+            # Send SSE to client
+            yield serialize_sse(event)
+
+            if event_type == "done":
+                # Persist assistant response
+                if full_response:
+                    session_manager.save_message(
+                        session_id, "assistant", full_response,
+                        tool_calls=tool_calls_log if tool_calls_log else None,
+                        plan=current_plan,
+                    )
+
+                # Auto-extract memories
+                if settings.memory_auto_extract:
+                    try:
+                        recent_messages = session_manager.get_session(session_id)[-6:]
+                        asyncio.create_task(memory_manager.auto_extract(recent_messages))
+                    except Exception as e:
+                        logger.warning(f"Auto-extract hook failed: {e}")
+                break
 
     except Exception as e:
         logger.error(f"Error in agent stream: {e}", exc_info=True)
-        error_data = json.dumps({"type": "error", "content": str(e)}, ensure_ascii=False)
-        yield f"data: {error_data}\n\n"
+        yield serialize_sse(events.build_error(str(e)))
     finally:
-        set_sse_approval_callback(None)
-        set_plan_sse_callback(None)
-
-
-async def _next_event(gen):
-    """Helper to get next event from async generator."""
-    return await gen.__anext__()
+        try:
+            from security import security_gate
+            security_gate.set_sse_callback(None)
+        except Exception:
+            pass
 
 
 # ============================================
-# API Routes: Plan Approval
+# 计划审批端点
 # ============================================
 from plan_approval import resolve_plan_approval
 
@@ -510,7 +360,7 @@ async def approve_plan(request: PlanApprovalRequest):
 
 
 # ============================================
-# API Routes: Security / Approval
+# 安全审批端点
 # ============================================
 class ApprovalRequest(BaseModel):
     request_id: str
@@ -553,7 +403,7 @@ async def security_status():
 
 
 # ============================================
-# API Routes: File Management
+# 文件端点
 # ============================================
 @app.get("/api/files")
 async def read_file(path: str = Query(..., description="Relative file path")):
@@ -674,7 +524,7 @@ async def file_tree(root: str = Query("", description="Root directory to list"))
 
 
 # ============================================
-# API Routes: Session Management
+# 会话端点
 # ============================================
 @app.get("/api/sessions")
 async def list_sessions():
@@ -717,7 +567,7 @@ async def generate_session_title(session_id: str):
     Generate a title for a session based on the first user message.
     Uses LLM to create a concise, descriptive title.
     """
-    from graph.agent import create_llm
+    from engine.llm_factory import create_llm
 
     messages = session_manager.get_session(session_id)
     if not messages:
@@ -766,7 +616,7 @@ async def generate_session_title(session_id: str):
 
 
 # ============================================
-# API Routes: Skills Management
+# 技能端点
 # ============================================
 @app.get("/api/skills")
 async def list_skills():
@@ -823,7 +673,7 @@ async def delete_skill(skill_name: str):
 
 
 # ============================================
-# API Routes: Skills Store
+# 技能商店端点
 # ============================================
 from store import SkillsStore
 from store.models import InstallRequest, RemoteSkill
@@ -920,7 +770,7 @@ async def get_store_categories():
 
 
 # ============================================
-# API Routes: Memory Management
+# 记忆端点
 # ============================================
 class MemoryEntryRequest(BaseModel):
     content: str
@@ -1037,7 +887,7 @@ async def reindex_memory():
 
 
 # ============================================
-# API Routes: Knowledge Base
+# 知识库端点
 # ============================================
 @app.post("/api/knowledge/rebuild")
 async def rebuild_knowledge_base():
@@ -1047,7 +897,7 @@ async def rebuild_knowledge_base():
 
 
 # ============================================
-# Translation API
+# 翻译端点
 # ============================================
 class TranslateRequest(BaseModel):
     content: str
@@ -1155,7 +1005,7 @@ async def translate_content(request: TranslateRequest):
 
 
 # ============================================
-# Health Check
+# 健康检查
 # ============================================
 @app.get("/api/health")
 async def health_check():
@@ -1168,7 +1018,7 @@ async def health_check():
 
 
 # ============================================
-# Settings API
+# 设置端点
 # ============================================
 class SettingsUpdateRequest(BaseModel):
     openai_api_key: Optional[str] = None
@@ -1399,7 +1249,10 @@ async def update_settings(request: SettingsUpdateRequest):
         prompt_cache.clear()
     except Exception:
         pass
-    logger.info("Settings reloaded after update (prompt cache cleared)")
+    # Invalidate LLM cache so new model config takes effect
+    from engine import invalidate_caches
+    invalidate_caches()
+    logger.info("Settings reloaded after update (prompt + LLM cache cleared)")
     return {"status": "ok", "message": "Settings saved and applied."}
 
 
@@ -1474,7 +1327,7 @@ async def test_model_connection(request: TestModelRequest):
 
 
 # ============================================
-# API Routes: MCP Management
+# MCP 端点
 # ============================================
 class McpServerRequest(BaseModel):
     transport: str  # "stdio" or "sse"
@@ -1617,7 +1470,7 @@ async def list_server_mcp_tools(name: str):
 
 
 # ============================================
-# API Routes: Model Pool
+# 模型池端点
 # ============================================
 class ModelPoolAddRequest(BaseModel):
     name: str
@@ -1687,6 +1540,9 @@ async def update_model_assignments(request: AssignmentsUpdateRequest):
             prompt_cache.clear()
         except Exception:
             pass
+        # Invalidate LLM cache
+        from engine import invalidate_caches
+        invalidate_caches()
 
         logger.info(f"Model assignments updated: {assignments}")
         return {"status": "ok", "assignments": assignments}
@@ -1770,7 +1626,7 @@ async def delete_pool_model(model_id: str):
 
 
 # ============================================
-# Cache Management
+# 缓存端点
 # ============================================
 def _get_core_cache_map() -> dict:
     """Get the 4 core cache instances."""
@@ -1993,7 +1849,7 @@ async def cleanup_cache():
 
 
 # ============================================
-# Entry Point
+# 入口点
 # ============================================
 if __name__ == "__main__":
     uvicorn.run(

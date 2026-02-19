@@ -1,7 +1,7 @@
-"""Memory Manager - Central hub for VibeWorker's memory system.
+"""记忆管理器 — VibeWorker 记忆系统的中枢。
 
-Manages both long-term memory (MEMORY.md) and daily logs (memory/logs/YYYY-MM-DD.md).
-Provides structured entry management, daily log operations, and statistics.
+管理长期记忆（MEMORY.md）和每日日志（memory/logs/YYYY-MM-DD.md）。
+提供结构化条目管理、每日日志操作和统计功能。
 """
 import hashlib
 import logging
@@ -14,7 +14,7 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Category definitions
+# 分类定义
 VALID_CATEGORIES = ["preferences", "facts", "tasks", "reflections", "general"]
 
 CATEGORY_LABELS = {
@@ -35,7 +35,7 @@ CATEGORY_HEADERS = {
 
 
 class MemoryEntry:
-    """A single memory entry."""
+    """单条记忆条目。"""
 
     def __init__(self, content: str, category: str, timestamp: str, entry_id: str = ""):
         self.content = content
@@ -58,30 +58,30 @@ class MemoryEntry:
 
 
 class MemoryManager:
-    """Central memory management class."""
+    """记忆管理核心类。"""
 
     def __init__(self):
         self.memory_dir = settings.memory_dir
         self.logs_dir = settings.memory_dir / "logs"
         self.memory_file = settings.memory_dir / "MEMORY.md"
-        # Ensure directories exist
+        # 确保目录存在
         self.memory_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
 
     # ============================================
-    # MEMORY.md Operations
+    # MEMORY.md 操作
     # ============================================
 
     def read_memory(self) -> str:
-        """Read the entire MEMORY.md file."""
+        """读取整个 MEMORY.md 文件。"""
         if not self.memory_file.exists():
             return ""
         return self.memory_file.read_text(encoding="utf-8")
 
     def get_entries(self, category: Optional[str] = None) -> list[dict]:
-        """Parse MEMORY.md and return structured entries.
+        """解析 MEMORY.md 并返回结构化条目。
 
-        Each entry is a bullet point line: `- [YYYY-MM-DD] content` or `- [YYYY-MM-DD][id] content`
+        每条记录为一行列表项：`- [YYYY-MM-DD] content` 或 `- [YYYY-MM-DD][id] content`
         """
         content = self.read_memory()
         if not content:
@@ -93,13 +93,13 @@ class MemoryManager:
         for line in content.split("\n"):
             stripped = line.strip()
 
-            # Detect category headers
+            # 检测分类标题
             for cat, header in CATEGORY_HEADERS.items():
                 if stripped.startswith(header):
                     current_category = cat
                     break
 
-            # Parse entry lines: `- [YYYY-MM-DD] content` or `- [YYYY-MM-DD][id] content`
+            # 解析条目行：`- [YYYY-MM-DD] content` 或 `- [YYYY-MM-DD][id] content`
             match = re.match(
                 r"^-\s+\[(\d{4}-\d{2}-\d{2})\](?:\[([a-f0-9]+)\])?\s*(.+)$",
                 stripped,
@@ -115,7 +115,7 @@ class MemoryManager:
                     timestamp=timestamp,
                     entry_id=entry_id,
                 )
-                # Generate ID if not present
+                # 若 ID 缺失则自动生成
                 if not entry.entry_id:
                     entry.entry_id = entry._generate_id(timestamp, entry_content)
 
@@ -125,9 +125,9 @@ class MemoryManager:
         return entries
 
     def add_entry(self, content: str, category: str = "general") -> dict:
-        """Add a new entry to MEMORY.md under the corresponding category section.
+        """向 MEMORY.md 对应分类下添加新条目。
 
-        Returns the created MemoryEntry dict. Deduplicates by content similarity.
+        返回创建的 MemoryEntry dict。按内容相似度去重。
         """
         if category not in VALID_CATEGORIES:
             category = "general"
@@ -135,20 +135,20 @@ class MemoryManager:
         today = datetime.now().strftime("%Y-%m-%d")
         entry = MemoryEntry(content=content, category=category, timestamp=today)
 
-        # Check for duplicates
+        # 检查重复
         existing = self.get_entries(category)
         for e in existing:
             if e["content"].strip() == content.strip():
-                return e  # Already exists
+                return e  # 已存在
 
-        # Read current content
+        # 读取当前内容
         memory_content = self.read_memory()
 
         header = CATEGORY_HEADERS[category]
         new_line = f"- [{today}][{entry.entry_id}] {content}"
 
         if header in memory_content:
-            # Find the section and insert after placeholder or last entry
+            # 找到对应分类，在占位符或最后一条之后插入
             lines = memory_content.split("\n")
             new_lines = []
             found_section = False
@@ -160,16 +160,16 @@ class MemoryManager:
                     found_section = True
                     continue
                 if found_section and not inserted:
-                    # Remove placeholder if present
+                    # 存在占位符时替换
                     if line.strip() == "_（暂无记录）_":
                         new_lines[-1] = new_line
                         inserted = True
                     elif not line.strip().startswith("- [") and not line.strip() == "":
-                        # We've passed the section entries, insert before this line
+                        # 已越过分类条目区域，在此行前插入
                         new_lines.insert(len(new_lines) - 1, new_line)
                         inserted = True
                     elif line.strip() == "" and i + 1 < len(lines) and lines[i + 1].strip().startswith("##"):
-                        # End of section (empty line before next header)
+                        # 分类结束（空行后是下一个标题）
                         new_lines.insert(len(new_lines) - 1, new_line)
                         inserted = True
 
@@ -178,15 +178,15 @@ class MemoryManager:
 
             memory_content = "\n".join(new_lines)
         else:
-            # Section doesn't exist, append it
+            # 分类不存在，追加新分类
             memory_content = memory_content.rstrip() + f"\n\n{header}\n{new_line}\n"
 
         self.memory_file.write_text(memory_content, encoding="utf-8")
-        logger.info(f"Added memory entry [{entry.entry_id}] to {category}")
+        logger.info(f"已添加记忆条目 [{entry.entry_id}] 到 {category}")
         return entry.to_dict()
 
     def delete_entry(self, entry_id: str) -> bool:
-        """Delete a memory entry by its ID."""
+        """按 ID 删除记忆条目。"""
         content = self.read_memory()
         if not content:
             return False
@@ -196,11 +196,11 @@ class MemoryManager:
         deleted = False
 
         for line in lines:
-            # Check if line contains this entry ID
+            # 检查行是否包含该条目 ID
             if f"[{entry_id}]" in line and line.strip().startswith("- ["):
                 deleted = True
                 continue
-            # Also try matching by generated ID
+            # 同时尝试按生成 ID 匹配
             match = re.match(
                 r"^-\s+\[(\d{4}-\d{2}-\d{2})\](?:\[([a-f0-9]+)\])?\s*(.+)$",
                 line.strip(),
@@ -216,22 +216,22 @@ class MemoryManager:
 
         if deleted:
             self.memory_file.write_text("\n".join(new_lines), encoding="utf-8")
-            logger.info(f"Deleted memory entry [{entry_id}]")
+            logger.info(f"已删除记忆条目 [{entry_id}]")
 
         return deleted
 
     # ============================================
-    # Daily Log Operations
+    # 每日日志操作
     # ============================================
 
     def _daily_log_path(self, day: Optional[str] = None) -> Path:
-        """Get the path for a daily log file."""
+        """获取每日日志文件路径。"""
         if day is None:
             day = datetime.now().strftime("%Y-%m-%d")
         return self.logs_dir / f"{day}.md"
 
     def append_daily_log(self, content: str, day: Optional[str] = None) -> None:
-        """Append content to today's (or specified day's) daily log."""
+        """向今天（或指定日期）的每日日志追加内容。"""
         path = self._daily_log_path(day)
         timestamp = datetime.now().strftime("%H:%M")
 
@@ -244,33 +244,33 @@ class MemoryManager:
         existing = path.read_text(encoding="utf-8")
         existing += f"- [{timestamp}] {content}\n"
         path.write_text(existing, encoding="utf-8")
-        logger.info(f"Appended to daily log: {path.name}")
+        logger.info(f"已追加到每日日志: {path.name}")
 
     def read_daily_log(self, day: Optional[str] = None) -> str:
-        """Read a daily log file."""
+        """读取每日日志文件。"""
         path = self._daily_log_path(day)
         if not path.exists():
             return ""
         return path.read_text(encoding="utf-8")
 
     def delete_daily_log(self, day: str) -> bool:
-        """Delete a daily log file."""
+        """删除每日日志文件。"""
         path = self._daily_log_path(day)
         if not path.exists():
             return False
         path.unlink()
-        logger.info(f"Deleted daily log: {path.name}")
+        logger.info(f"已删除每日日志: {path.name}")
         return True
 
     def list_daily_logs(self) -> list[dict]:
-        """List all daily log files with metadata."""
+        """列出所有每日日志文件及元数据。"""
         logs = []
         if not self.logs_dir.exists():
             return logs
 
         for f in sorted(self.logs_dir.glob("*.md"), reverse=True):
-            name = f.stem  # e.g., "2026-02-15"
-            # Validate format
+            name = f.stem  # 如 "2026-02-15"
+            # 校验格式
             if not re.match(r"\d{4}-\d{2}-\d{2}", name):
                 continue
             stat = f.stat()
@@ -283,9 +283,9 @@ class MemoryManager:
         return logs
 
     def get_daily_context(self, num_days: Optional[int] = None) -> str:
-        """Get recent daily logs for System Prompt injection.
+        """获取近期每日日志，用于注入 System Prompt。
 
-        Returns today + yesterday (or configurable number of days) logs.
+        返回今天 + 昨天（或可配置天数）的日志内容。
         """
         if num_days is None:
             num_days = settings.memory_daily_log_days
@@ -303,15 +303,15 @@ class MemoryManager:
         return "\n\n".join(parts)
 
     # ============================================
-    # Statistics
+    # 统计
     # ============================================
 
     def get_stats(self) -> dict:
-        """Get memory statistics."""
+        """获取记忆统计信息。"""
         entries = self.get_entries()
         logs = self.list_daily_logs()
 
-        # Count by category
+        # 按分类计数
         category_counts = {}
         for cat in VALID_CATEGORIES:
             category_counts[cat] = sum(1 for e in entries if e["category"] == cat)
@@ -328,25 +328,25 @@ class MemoryManager:
         }
 
     # ============================================
-    # Auto Extraction (Phase 6)
+    # 自动提取（Phase 6）
     # ============================================
 
     async def auto_extract(self, messages: list[dict]) -> None:
-        """Automatically extract key information from recent messages.
+        """从近期消息中自动提取关键信息。
 
-        Takes last 3 rounds (6 messages), uses lightweight LLM to extract
-        preferences/facts/tasks, writes to daily log with [auto] prefix.
+        取最近 3 轮（6 条消息），使用轻量 LLM 提取偏好/事实/任务，
+        以 [auto] 前缀写入每日日志。
         """
         if not settings.memory_auto_extract:
             return
 
         try:
-            # Take last 6 messages
+            # 取最近 6 条消息
             recent = messages[-6:] if len(messages) > 6 else messages
             if not recent:
                 return
 
-            # Build conversation text
+            # 构建对话文本
             conversation = ""
             for msg in recent:
                 role = msg.get("role", "unknown")
@@ -357,7 +357,7 @@ class MemoryManager:
             if not conversation.strip():
                 return
 
-            from graph.agent import create_llm
+            from engine.llm_factory import create_llm
             llm = create_llm()
 
             prompt = f"""分析以下对话，提取值得记住的关键信息。只提取确定性的事实和偏好，不要猜测。
@@ -390,13 +390,13 @@ class MemoryManager:
                 if not content:
                     continue
 
-                # Write to daily log with [auto] prefix
+                # 以 [auto] 前缀写入每日日志
                 self.append_daily_log(f"[auto] [{cat}] {content}")
-                logger.info(f"Auto-extracted: [{cat}] {content[:50]}...")
+                logger.info(f"自动提取: [{cat}] {content[:50]}...")
 
         except Exception as e:
-            logger.error(f"Auto-extraction failed: {e}")
+            logger.error(f"自动提取失败: {e}")
 
 
-# Singleton instance
+# 单例实例
 memory_manager = MemoryManager()

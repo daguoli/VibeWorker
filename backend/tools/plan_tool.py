@@ -8,22 +8,9 @@ from langchain_core.tools import tool
 
 logger = logging.getLogger(__name__)
 
-# Module-level SSE callback for plan events (same pattern as SecurityGate)
+# Legacy SSE callback (kept for backward compat during transition, used by plan_update)
 _sse_plan_callback: Optional[Callable] = None
-
-# Latest plan data storage for Phase 2 handoff
-_latest_plan: Optional[dict] = None
-
-
-def get_latest_plan() -> Optional[dict]:
-    """Get and consume the latest plan created by plan_create tool.
-
-    Returns the plan data and clears it so it's only consumed once.
-    """
-    global _latest_plan
-    plan = _latest_plan
-    _latest_plan = None
-    return plan
+_event_loop: asyncio.AbstractEventLoop = None  # type: ignore
 
 
 def set_plan_sse_callback(callback: Optional[Callable]) -> None:
@@ -37,31 +24,33 @@ def get_plan_sse_callback() -> Optional[Callable]:
     return _sse_plan_callback
 
 
-def _send_plan_event(event_data: dict) -> None:
-    """Send a plan event through the SSE callback (thread-safe)."""
-    callback = get_plan_sse_callback()
-    if callback is None:
-        return
-    try:
-        # Tools run in thread pool, so we need thread-safe scheduling
-        loop = _event_loop or asyncio.get_event_loop()
-        loop.call_soon_threadsafe(asyncio.ensure_future, callback(event_data))
-    except RuntimeError:
-        # No event loop available — try direct approach
-        try:
-            asyncio.run(callback(event_data))
-        except Exception:
-            pass
-
-
-# Store reference to the main event loop (set from app.py)
-_event_loop: asyncio.AbstractEventLoop = None  # type: ignore
-
-
 def set_plan_event_loop(loop: asyncio.AbstractEventLoop) -> None:
     """Store reference to the main async event loop for thread-safe callbacks."""
     global _event_loop
     _event_loop = loop
+
+
+def _send_plan_event(event_data: dict) -> None:
+    """Send a plan event through RunContext or legacy SSE callback (thread-safe)."""
+    # Prefer RunContext if available
+    from session_context import get_run_context
+    ctx = get_run_context()
+    if ctx is not None:
+        ctx.emit_plan_event(event_data)
+        return
+
+    # Fallback to legacy callback
+    callback = get_plan_sse_callback()
+    if callback is None:
+        return
+    try:
+        loop = _event_loop or asyncio.get_event_loop()
+        loop.call_soon_threadsafe(asyncio.ensure_future, callback(event_data))
+    except RuntimeError:
+        try:
+            asyncio.run(callback(event_data))
+        except Exception:
+            pass
 
 
 @tool
@@ -97,9 +86,11 @@ def plan_create(title: str, steps: list) -> str:
         ],
     }
 
-    # Store plan data for Phase 2 handoff
-    global _latest_plan
-    _latest_plan = plan
+    # Store plan data via RunContext (replaces global _latest_plan)
+    from session_context import get_run_context
+    ctx = get_run_context()
+    if ctx is not None:
+        ctx.plan_data = plan
 
     _send_plan_event({"type": "plan_created", "plan": plan})
 
@@ -140,14 +131,7 @@ def plan_update(plan_id: str, step_id: int, status: str) -> str:
 
 
 def send_plan_revised_event(plan_id: str, revised_steps: list[dict], keep_completed: int, reason: str = "") -> None:
-    """Send a plan_revised SSE event from the Replanner node.
-
-    Args:
-        plan_id: The plan ID being revised.
-        revised_steps: New steps list (each dict with id, title, status).
-        keep_completed: Number of completed steps kept from the original plan.
-        reason: Why the plan was revised.
-    """
+    """Send a plan_revised SSE event from the Replanner node."""
     _send_plan_event({
         "type": "plan_revised",
         "plan_id": plan_id,
@@ -158,22 +142,12 @@ def send_plan_revised_event(plan_id: str, revised_steps: list[dict], keep_comple
 
 
 def send_plan_created_event(plan: dict) -> None:
-    """Send a plan_created SSE event directly (used by task-mode Planner node).
-
-    Args:
-        plan: Plan dict with plan_id, title, steps.
-    """
+    """Send a plan_created SSE event directly."""
     _send_plan_event({"type": "plan_created", "plan": plan})
 
 
 def send_plan_updated_event(plan_id: str, step_id: int, status: str) -> None:
-    """Send a plan_updated SSE event directly (used by task-mode Executor node).
-
-    Args:
-        plan_id: The plan ID.
-        step_id: Step number (1-based).
-        status: Step status (pending/running/completed/failed).
-    """
+    """Send a plan_updated SSE event directly."""
     _send_plan_event({
         "type": "plan_updated",
         "plan_id": plan_id,
