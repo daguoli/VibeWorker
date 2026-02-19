@@ -18,7 +18,9 @@ def _config_fingerprint(scenario: str = "llm") -> str:
     """根据当前模型配置生成短哈希，用于缓存键。"""
     from model_pool import resolve_model
     cfg = resolve_model(scenario)
-    raw = f"{cfg['api_key']}|{cfg['api_base']}|{cfg['model']}|{settings.llm_temperature}|{settings.llm_max_tokens}"
+    raw = (f"{cfg['api_key']}|{cfg['api_base']}|{cfg['model']}"
+           f"|{settings.llm_temperature}|{settings.llm_max_tokens}"
+           f"|{settings.llm_request_timeout}")
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -36,7 +38,13 @@ def get_llm(streaming: bool = True, scenario: str = "llm") -> ChatOpenAI:
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
             streaming=streaming,
+            timeout=settings.llm_request_timeout,
         )
+        logger.info("LLM 实例已创建: model=%s, base=%s, temperature=%s, timeout=%ds",
+                     cfg["model"], cfg["api_base"], settings.llm_temperature,
+                     settings.llm_request_timeout)
+    else:
+        logger.debug("LLM 实例已复用: fingerprint=%s", fp)
     return _llm_cache[key]
 
 

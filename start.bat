@@ -11,7 +11,7 @@ set "FRONTEND_DIR=%SCRIPT_DIR%frontend"
 set "BACKEND_PORT=8088"
 set "FRONTEND_PORT=3000"
 
-if "%1"=="" goto :start
+if "%1"=="" goto :restart
 if "%1"=="start" goto :start
 if "%1"=="stop" goto :stop
 if "%1"=="restart" goto :restart

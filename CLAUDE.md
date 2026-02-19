@@ -33,17 +33,12 @@ cd frontend && npm run build
 ---
 
 ## 后端架构
+注意： 所有代码注释使用中文
 
 ### 1. Agent 编排引擎（混合架构）
 
 **目录：** `backend/engine/`（Agent 编排引擎，详见 `engine/ARCHITECTURE.md`）
 
-- ✅ **必须**用 `langchain.agents.create_agent` API（LangChain 1.0+）
-- ❌ **严禁**用旧版 `AgentExecutor` 或早期 `create_react_agent`
-- **Phase 1**：ReAct agent 统一入口，拥有全部工具（含 plan_create）
-- **Phase 2**：当 agent 调用 `plan_create` 后自动触发 → 逐步 Executor 子 agent + Replanner 评估
-- **Approval Gate**：可选，`plan_require_approval=true` 时等待用户确认
-- 工作流：Phase 1（LLM → Tool → 迭代） → [plan_create 触发] → Phase 2（Executor Loop + Replanner）
 
 ### 2. Core Tools（7 个内置工具，`backend/tools/`）
 

@@ -18,13 +18,14 @@ async def plan_gate_node(state: AgentState, config: RunnableConfig) -> dict[str,
     - 发出 plan_created 侧通道事件
     - 初始化步骤执行索引
     """
+    sid = state.get("session_id", "unknown")
     plan_data = state.get("plan_data")
     if not plan_data:
-        logger.warning("plan_gate 被调用但 plan_data 为空")
+        logger.warning("[%s] plan_gate 被调用但 plan_data 为空", sid)
         return {}
 
-    logger.info("计划门控: plan_id=%s, title=%s, steps=%d",
-                plan_data.get("plan_id"), plan_data.get("title"),
+    logger.info("[%s] 计划门控: plan_id=%s, title=%s, steps=%d",
+                sid, plan_data.get("plan_id"), plan_data.get("title"),
                 len(plan_data.get("steps", [])))
 
     return {

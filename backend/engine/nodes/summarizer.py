@@ -21,6 +21,7 @@ async def summarizer_node(state: AgentState, config: RunnableConfig) -> dict[str
     3. 清除 plan_data 和步骤状态
     4. 图回到 agent_node → agent 看到总结后生成最终回复
     """
+    sid = state.get("session_id", "unknown")
     plan_data = state.get("plan_data")
     past_steps = state.get("past_steps", [])
 
@@ -41,7 +42,7 @@ async def summarizer_node(state: AgentState, config: RunnableConfig) -> dict[str
 请根据以上执行结果，生成一个简洁的总结回复给用户。如果所有步骤都成功完成，告知用户任务已完成；如果有失败的步骤，说明原因和建议。"""
     )
 
-    logger.info("计划总结: plan_id=%s, 步骤数=%d", plan_id, len(past_steps))
+    logger.info("[%s] 计划总结: plan_id=%s, 步骤数=%d", sid, plan_id, len(past_steps))
 
     # 标记所有步骤完成的事件
     pending_events = []

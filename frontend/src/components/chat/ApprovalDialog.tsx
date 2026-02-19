@@ -94,7 +94,8 @@ export default function ApprovalDialog({
                     onAllowForSession(request.tool);
                 }
             } catch (err) {
-                console.error("Failed to send approval:", err);
+                // 审批可能已超时/自动处理，降级为 warn 避免 Next.js Error Overlay
+                console.warn("Failed to send approval (may have expired):", err);
             } finally {
                 setSending(false);
                 onResolved();

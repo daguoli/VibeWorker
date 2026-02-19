@@ -39,6 +39,9 @@ async def run_agent(
     from config import settings
 
     mws = middlewares or []
+    sid = ctx.session_id
+
+    logger.info("[%s] 开始执行 Agent, 缓存模式=%s", sid, settings.enable_llm_cache)
 
     # 通知中间件运行开始
     for mw in mws:
@@ -51,6 +54,10 @@ async def run_agent(
         else:
             async for event in _run_uncached(message, session_history, ctx, mws):
                 yield event
+        logger.info("[%s] Agent 执行完成", sid)
+    except Exception as e:
+        logger.error("[%s] Agent 执行异常: %s", sid, e, exc_info=True)
+        raise
     finally:
         # 通知中间件运行结束
         for mw in mws:
@@ -95,6 +102,7 @@ async def _run_uncached(message, session_history, ctx, mws):
     """核心执行：统一 StateGraph 编排。"""
     from prompt_builder import build_system_prompt
 
+    sid = ctx.session_id
     ctx.message = message
     ctx.session_history = session_history
 
@@ -114,10 +122,16 @@ async def _run_uncached(message, session_history, ctx, mws):
         executor_node_config.get("tools", ["core", "mcp"]),
     )
 
+    logger.info("[%s] 图配置已加载, 工具数: agent=%d executor=%d",
+                sid, len(agent_tools), len(executor_tools))
+
     # 3. 构建初始状态
     system_prompt = build_system_prompt()
     messages = convert_history(session_history)
     messages.append(HumanMessage(content=message))
+
+    logger.info("[%s] 系统提示已构建, 长度=%d, 历史消息=%d",
+                sid, len(system_prompt), len(messages))
 
     input_state = {
         "messages": messages,
@@ -131,6 +145,7 @@ async def _run_uncached(message, session_history, ctx, mws):
     run_config = {
         "configurable": {
             "thread_id": ctx.session_id,
+            "session_id": ctx.session_id,
             "graph_config": graph_config,
             "agent_tools": agent_tools,
             "executor_tools": executor_tools,
@@ -139,6 +154,7 @@ async def _run_uncached(message, session_history, ctx, mws):
     }
 
     # 5. 流式执行 + 中间件管线
+    logger.info("[%s] 开始图流式执行", sid)
     async for event in _pipe(
         stream_graph_events(graph, input_state, run_config, system_prompt=system_prompt),
         mws, ctx,
@@ -149,6 +165,7 @@ async def _run_uncached(message, session_history, ctx, mws):
     try:
         state_snapshot = graph.get_state(run_config)
         if state_snapshot and state_snapshot.next:
+            logger.info("[%s] 检查 interrupt 状态: has_next=%s", sid, bool(state_snapshot.next))
             # 图被中断 → 提取 interrupt payload
             interrupt_values = getattr(state_snapshot, "tasks", [])
             plan_info = _extract_interrupt_payload(interrupt_values)
@@ -159,6 +176,7 @@ async def _run_uncached(message, session_history, ctx, mws):
 
                 # 阻塞等待审批（保持 SSE 流不断开）
                 approved = await _wait_for_approval(ctx, plan_info.get("plan_id", ""))
+                logger.info("[%s] 审批结果: approved=%s", sid, approved)
 
                 # resume 图
                 resume_cmd = Command(resume={"approved": approved})
