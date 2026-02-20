@@ -71,6 +71,15 @@ export interface PlanRevision {
   keep_completed: number;
 }
 
+// 模型详情（来自 OpenRouter 定价数据）
+export interface ModelInfo {
+  name: string;              // 模型显示名称
+  description: string;       // 模型描述
+  context_length: number;    // 上下文长度
+  prompt_price: number;      // 输入价格（$/token）
+  completion_price: number;  // 输出价格（$/token）
+}
+
 // Debug types
 export interface DebugLLMCall {
   call_id: string;
@@ -87,6 +96,12 @@ export interface DebugLLMCall {
   timestamp: string;
   _inProgress?: boolean;  // Internal flag for in-progress state
   motivation?: string;    // Agent's motivation/explanation for this call
+  // 成本相关字段（基于 OpenRouter 定价）
+  input_cost?: number;       // 输入成本（美元）
+  output_cost?: number;      // 输出成本（美元）
+  total_cost?: number;       // 总成本（美元）
+  cost_estimated?: boolean;  // 成本是否基于估算的 token
+  model_info?: ModelInfo;    // 模型详情（用于悬停显示）
 }
 
 export interface DebugToolCall {
@@ -138,6 +153,11 @@ export interface SSEEvent {
   output_tokens?: number;
   total_tokens?: number;
   reasoning?: string;     // 推理模型的 <think> 内容
+  // 成本相关字段（从 OpenRouter 定价计算）
+  input_cost?: number;
+  output_cost?: number;
+  total_cost?: number;
+  cost_estimated?: boolean;
 }
 
 // ============================================

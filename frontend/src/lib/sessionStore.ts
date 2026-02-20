@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useEffect, useCallback } from "react";
-import { streamChat, fetchSessionMessages, sendApproval, sendPlanApproval, type ChatMessage, type ToolCall, type MessageSegment, type Plan, type PlanStep, type PlanRevision, type DebugLLMCall, type DebugToolCall, type DebugDivider, type DebugCall } from "./api";
+import { streamChat, fetchSessionMessages, sendApproval, sendPlanApproval, type ChatMessage, type ToolCall, type MessageSegment, type Plan, type PlanStep, type PlanRevision, type DebugLLMCall, type DebugToolCall, type DebugDivider, type DebugCall, type SSEEvent } from "./api";
 
 // Helper to check if a debug call is an LLM call
 export function isLLMCall(call: DebugCall): call is DebugLLMCall {
@@ -390,15 +390,37 @@ class SessionStore {
                 const call = calls[i];
                 if (isLLMCall(call) && call.call_id === event.call_id && call._inProgress) {
                   console.log("[llm_end] Found match! Old input.length:", call.input?.length, "New input.length:", (event.input || call.input)?.length);
+                  // 提取扩展字段（SSEEvent 类型中未定义的字段）
+                  const rawEvent = event as SSEEvent & {
+                    tokens_estimated?: boolean;
+                    input_cost?: number;
+                    output_cost?: number;
+                    total_cost?: number;
+                    cost_estimated?: boolean;
+                    model_info?: {
+                      name: string;
+                      description: string;
+                      context_length: number;
+                      prompt_price: number;
+                      completion_price: number;
+                    };
+                  };
                   calls[i] = {
                     ...call,
                     duration_ms: event.duration_ms ?? null,
                     input_tokens: event.input_tokens ?? null,
                     output_tokens: event.output_tokens ?? null,
                     total_tokens: event.total_tokens ?? null,
+                    tokens_estimated: rawEvent.tokens_estimated,  // token 是否为估算值
                     input: event.input || call.input,  // Update input from llm_end event
                     output: event.output || "",
                     reasoning: event.reasoning || undefined,
+                    // 成本相关字段（从 OpenRouter 定价计算）
+                    input_cost: rawEvent.input_cost,
+                    output_cost: rawEvent.output_cost,
+                    total_cost: rawEvent.total_cost,
+                    cost_estimated: rawEvent.cost_estimated,
+                    model_info: rawEvent.model_info,  // 模型详情（用于悬停显示）
                     _inProgress: false,
                   };
                   break;

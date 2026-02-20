@@ -87,6 +87,20 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"MCP initialization failed (non-fatal): {e}")
 
+    # 每日首次启动获取 OpenRouter 定价数据
+    try:
+        from pricing import pricing_manager
+        if pricing_manager.should_fetch_today():
+            success = await pricing_manager.fetch_and_cache()
+            if success:
+                logger.info("OpenRouter pricing data updated")
+            else:
+                logger.warning("Failed to fetch OpenRouter pricing (using cache if available)")
+        else:
+            logger.debug("OpenRouter pricing data is up-to-date")
+    except Exception as e:
+        logger.warning(f"Pricing initialization failed (non-fatal): {e}")
+
     # Start cache cleanup task
     async def cleanup_loop():
         """Periodic cache cleanup every hour."""

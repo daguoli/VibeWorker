@@ -251,6 +251,26 @@ def build_llm_end_from_raw(event: dict, tracked: dict) -> dict:
     )
     # 标记 token 是否为估算值，前端可据此显示不同样式
     result["tokens_estimated"] = tokens_estimated
+
+    # 计算成本（基于 OpenRouter 定价数据）
+    try:
+        from pricing import pricing_manager
+        cost_info = pricing_manager.calculate_cost(
+            model=model_name,
+            input_tokens=tokens.get("input_tokens", 0),
+            output_tokens=tokens.get("output_tokens", 0),
+        )
+        if cost_info:
+            result["input_cost"] = cost_info["input_cost"]
+            result["output_cost"] = cost_info["output_cost"]
+            result["total_cost"] = cost_info["total_cost"]
+            result["cost_estimated"] = tokens_estimated  # 成本是否基于估算的 token
+            # 模型详情（用于前端悬停显示）
+            if cost_info.get("model_info"):
+                result["model_info"] = cost_info["model_info"]
+    except Exception as e:
+        logger.debug(f"成本计算失败（非致命）: {e}")
+
     return result
 
 
