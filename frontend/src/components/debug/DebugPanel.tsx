@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Bug, X, ChevronRight, ChevronDown, Copy, Check } from "lucide-react";
+import CollapsibleInput from "./CollapsibleInput";
 import { Button } from "@/components/ui/button";
 import { sessionStore, useSessionState } from "@/lib/sessionStore";
 import type { DebugCall, DebugDivider, DebugLLMCall, DebugToolCall } from "@/lib/api";
@@ -141,15 +142,8 @@ function DebugCallItem({ call }: { call: DebugLLMCall | DebugToolCall }) {
           }`}
         >
           <div className="border-t border-border px-3 py-2 space-y-2">
-            {/* Input */}
-            <div>
-              <div className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider mb-1">
-                Input ({call.input?.length || 0} chars)
-              </div>
-              <pre className="text-[11px] font-mono whitespace-pre-wrap break-all bg-muted/30 rounded-md p-2 max-h-[500px] overflow-auto text-foreground/80">
-                {call.input || "(empty)"}
-              </pre>
-            </div>
+            {/* Input - 使用可折叠树状展示 */}
+            <CollapsibleInput input={call.input || ""} />
             {/* Reasoning — 推理模型的思考过程 */}
             {call.reasoning && (
               <div>

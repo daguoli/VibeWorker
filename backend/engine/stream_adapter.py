@@ -155,25 +155,50 @@ class ThinkTagFilter:
 
 
 def _serialize_debug_messages(input_data) -> str:
-    """序列化 LLM 输入消息，用于调试显示。"""
-    messages = input_data.get("messages", [])
+    """序列化 LLM 输入消息，用于调试显示。
+
+    直接显示传给 LLM 的消息列表（SystemMessage + HumanMessage + ...）。
+    """
+    messages = []
+
+    if isinstance(input_data, dict):
+        messages = input_data.get("messages", [])
+    elif isinstance(input_data, list):
+        messages = input_data
+
+    # 处理嵌套列表：[[msg1, msg2, ...]]
     if messages and isinstance(messages[0], list):
         messages = messages[0]
+
+    # 如果还是空的，尝试其他可能的键
+    if not messages and isinstance(input_data, dict):
+        for key in ["input", "content", "prompt"]:
+            if key in input_data:
+                val = input_data[key]
+                if isinstance(val, list):
+                    messages = val
+                    break
+
     parts = []
     for msg in messages:
+        # 获取消息类型
         role = type(msg).__name__
-        content = str(msg.content) if hasattr(msg, "content") else str(msg)
+        # 获取消息内容
+        if hasattr(msg, "content"):
+            content = str(msg.content)
+        elif isinstance(msg, dict):
+            content = msg.get("content", str(msg))
+            role = msg.get("role", msg.get("type", role))
+        else:
+            content = str(msg)
         parts.append(f"[{role}]\n{content}")
-    return "\n---\n".join(parts)
+
+    return "\n---\n".join(parts) if parts else "(no messages)"
 
 
-def _format_debug_input(system_prompt: str, messages_str: str, instruction: str = None) -> str:
-    """格式化调试输入，保持统一结构。"""
-    parts = [f"[System Prompt]\n{system_prompt}"]
-    if instruction:
-        parts.append(f"[Instruction]\n{instruction}")
-    parts.append(f"[Messages]\n{messages_str}")
-    return "\n\n".join(parts)
+def _format_debug_input(messages_str: str) -> str:
+    """格式化调试输入，直接返回消息字符串。"""
+    return messages_str
 
 
 # 节点到 motivation 的映射
@@ -248,9 +273,10 @@ async def stream_graph_events(
         elif kind == "on_chat_model_start":
             run_id = event.get("run_id", "")
             node = metadata.get("langgraph_node", "")
-            input_data_msg = (event.get("data") or {}).get("input", {})
+            data = event.get("data") or {}
+            input_data_msg = data.get("input", {})
             input_messages = _serialize_debug_messages(input_data_msg)
-            full_input = _format_debug_input(system_prompt, input_messages)
+            full_input = _format_debug_input(input_messages)
             debug_tracking[run_id] = {
                 "start_time": time.time(),
                 "node": node,
@@ -260,7 +286,7 @@ async def stream_graph_events(
             mot = _NODE_MOTIVATIONS.get(node, "调用大模型处理请求")
             model_name = resolve_model("llm").get("model", "unknown")
             logger.info("[%s] Stream LLM 开始: node=%s, model=%s", sid, node, model_name)
-            yield events.build_llm_start(run_id[:12], node, model_name, full_input[:5000], mot)
+            yield events.build_llm_start(run_id[:12], node, model_name, full_input, mot)
 
         elif kind == "on_chat_model_end":
             run_id = event.get("run_id", "")
@@ -277,7 +303,7 @@ async def stream_graph_events(
                 reasoning = think_filter.extract_reasoning()
                 llm_end_event = events.build_llm_end_from_raw(event, tracked)
                 if reasoning:
-                    llm_end_event["reasoning"] = reasoning[:5000]
+                    llm_end_event["reasoning"] = reasoning
                 yield llm_end_event
 
         elif kind == "on_tool_start":

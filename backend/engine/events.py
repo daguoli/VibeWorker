@@ -69,7 +69,7 @@ def build_llm_start(call_id: str, node: str, model: str, input_text: str, motiva
         "call_id": call_id,
         "node": node,
         "model": model,
-        "input": input_text[:5000],
+        "input": input_text,  # 不截断，前端会处理折叠显示
         "motivation": motivation,
     }
 
@@ -85,8 +85,8 @@ def build_llm_end(call_id: str, node: str, model: str, duration_ms: int,
         "input_tokens": tokens.get("input_tokens"),
         "output_tokens": tokens.get("output_tokens"),
         "total_tokens": tokens.get("total_tokens"),
-        "input": input_text[:5000],
-        "output": output_text[:3000],
+        "input": input_text,  # 不截断，前端会处理折叠显示
+        "output": output_text,  # 不截断
     }
 
 
