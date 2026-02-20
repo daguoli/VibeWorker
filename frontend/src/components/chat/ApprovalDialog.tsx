@@ -175,7 +175,7 @@ export default function ApprovalDialog({
                         <button
                             type="button"
                             onClick={() => setShowFeedback(!showFeedback)}
-                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors focus:outline-none"
                         >
                             {showFeedback ? (
                                 <ChevronDown className="w-3 h-3" />
