@@ -37,6 +37,7 @@ const CATEGORY_OPTIONS = [
     { value: "facts", label: "事实" },
     { value: "tasks", label: "任务" },
     { value: "reflections", label: "反思" },
+    { value: "procedural", label: "程序" },
     { value: "general", label: "通用" },
 ];
 
@@ -45,11 +46,12 @@ const CATEGORY_LABELS: Record<string, string> = {
     facts: "事实",
     tasks: "任务",
     reflections: "反思",
+    procedural: "程序",
     general: "通用",
 };
 
 const WORKSPACE_FILES = [
-    { name: "MEMORY.md", path: "memory/MEMORY.md", icon: "📝" },
+    { name: "memory.json", path: "memory/memory.json", icon: "📝" },
     { name: "SOUL.md", path: "workspace/SOUL.md", icon: "💫" },
     { name: "IDENTITY.md", path: "workspace/IDENTITY.md", icon: "🪪" },
     { name: "USER.md", path: "workspace/USER.md", icon: "👤" },
@@ -79,6 +81,7 @@ export default function MemoryPanel({ onFileOpen }: MemoryPanelProps) {
     const [showAddForm, setShowAddForm] = useState(false);
     const [newContent, setNewContent] = useState("");
     const [newCategory, setNewCategory] = useState("general");
+    const [newSalience, setNewSalience] = useState(0.5);
     const [isAdding, setIsAdding] = useState(false);
 
     const loadEntries = useCallback(async () => {
@@ -122,8 +125,18 @@ export default function MemoryPanel({ onFileOpen }: MemoryPanelProps) {
         setIsSearching(true);
         setSearchResult(null);
         try {
-            const result = await searchMemory(searchQuery);
-            setSearchResult(result);
+            const { results } = await searchMemory(searchQuery);
+            if (results.length === 0) {
+                setSearchResult(`未找到与 "${searchQuery}" 相关的记忆。`);
+            } else {
+                // 格式化搜索结果
+                const formatted = results.map((r) => {
+                    const cat = r.category ? `[${CATEGORY_LABELS[r.category] || r.category}]` : "";
+                    const star = (r.salience ?? 0) >= 0.8 ? "⭐ " : "";
+                    return `${star}${cat} ${r.content}`;
+                }).join("\n\n---\n\n");
+                setSearchResult(`找到 ${results.length} 条相关记忆:\n\n${formatted}`);
+            }
         } catch {
             setSearchResult("搜索失败，请检查后端连接。");
         } finally {
@@ -135,8 +148,9 @@ export default function MemoryPanel({ onFileOpen }: MemoryPanelProps) {
         if (!newContent.trim()) return;
         setIsAdding(true);
         try {
-            await addMemoryEntry(newContent.trim(), newCategory);
+            await addMemoryEntry(newContent.trim(), newCategory, newSalience);
             setNewContent("");
+            setNewSalience(0.5);
             setShowAddForm(false);
             await loadEntries();
         } catch {
@@ -292,6 +306,21 @@ export default function MemoryPanel({ onFileOpen }: MemoryPanelProps) {
                                                 </option>
                                             ))}
                                         </select>
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">重要性</span>
+                                            <input
+                                                type="range"
+                                                min={0}
+                                                max={1}
+                                                step={0.1}
+                                                value={newSalience}
+                                                onChange={(e) => setNewSalience(parseFloat(e.target.value))}
+                                                className="w-14 h-1 accent-primary"
+                                            />
+                                            <span className="text-[10px] text-muted-foreground/70 w-5 text-right">{newSalience.toFixed(1)}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
                                         <div className="flex-1" />
                                         <Button
                                             variant="ghost"
@@ -343,6 +372,12 @@ export default function MemoryPanel({ onFileOpen }: MemoryPanelProps) {
                                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary/70 shrink-0">
                                             {CATEGORY_LABELS[entry.category] || entry.category}
                                         </span>
+                                        {/* 显示重要性标记 */}
+                                        {(entry.salience ?? 0) >= 0.8 && (
+                                            <span className="text-[10px] text-amber-500 shrink-0" title={`重要性: ${entry.salience?.toFixed(2)}`}>
+                                                ⭐
+                                            </span>
+                                        )}
                                         <Trash2
                                             className="w-3 h-3 mt-0.5 opacity-0 group-hover:opacity-40 hover:!opacity-100 hover:text-destructive shrink-0 transition-opacity cursor-pointer ml-auto"
                                             onClick={(e) => handleDeleteEntry(e, entry.entry_id)}
@@ -351,6 +386,12 @@ export default function MemoryPanel({ onFileOpen }: MemoryPanelProps) {
                                     <p className="text-xs text-foreground/80 mt-1 break-words leading-relaxed">
                                         {entry.content}
                                     </p>
+                                    {/* 显示访问次数 */}
+                                    {entry.access_count && entry.access_count > 1 && (
+                                        <span className="text-[9px] text-muted-foreground/40 mt-0.5 block">
+                                            访问 {entry.access_count} 次
+                                        </span>
+                                    )}
                                 </div>
                             ))}
                         </>

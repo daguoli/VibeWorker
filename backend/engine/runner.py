@@ -99,7 +99,8 @@ async def _cached_run(message, session_history, ctx, mws):
 
 async def _run_uncached(message, session_history, ctx, mws):
     """核心执行：统一 StateGraph 编排。"""
-    from prompt_builder import build_system_prompt
+    from prompt_builder import build_system_prompt, build_implicit_recall_context, build_procedural_hints
+    from config import settings as _settings
 
     sid = ctx.session_id
     ctx.message = message
@@ -134,6 +135,25 @@ async def _run_uncached(message, session_history, ctx, mws):
     working_dir = str(get_tmp_dir_for_session(sid))
     system_prompt = system_prompt.replace("{{SESSION_ID}}", sid)
     system_prompt = system_prompt.replace("{{WORKING_DIR}}", working_dir)
+
+    # 隐式召回：对话开始时自动检索相关记忆 + 程序性记忆
+    if _settings.memory_implicit_recall_enabled:
+        try:
+            recall_ctx = build_implicit_recall_context(message)
+            if recall_ctx:
+                system_prompt += f"\n\n---\n\n{recall_ctx}"
+                logger.info("[%s] 隐式召回已注入, 长度=%d", sid, len(recall_ctx))
+        except Exception as e:
+            logger.warning("[%s] 隐式召回失败（非致命）: %s", sid, e)
+
+    # 程序性记忆提示：高重要性的工具使用注意事项
+    try:
+        procedural_ctx = build_procedural_hints()
+        if procedural_ctx:
+            system_prompt += f"\n\n---\n\n{procedural_ctx}"
+            logger.info("[%s] 程序性提示已注入, 长度=%d", sid, len(procedural_ctx))
+    except Exception as e:
+        logger.warning("[%s] 程序性提示注入失败（非致命）: %s", sid, e)
 
     messages = [
         SystemMessage(content=system_prompt, id="system-prompt"),

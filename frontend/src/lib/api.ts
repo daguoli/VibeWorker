@@ -609,6 +609,9 @@ export interface MemoryEntry {
   content: string;
   category: string;
   timestamp: string;
+  salience?: number;      // 重要性评分 (0.0-1.0)
+  access_count?: number;  // 访问次数
+  source?: string;        // 来源标识（user_explicit/auto_extract/api/migration 等）
 }
 
 export interface DailyLog {
@@ -624,6 +627,17 @@ export interface MemoryStats {
   memory_file_size: number;
   daily_log_days: number;
   auto_extract_enabled: boolean;
+  avg_salience?: number;  // 平均重要性
+  version?: number;       // 记忆系统版本
+}
+
+export interface MemorySearchResult {
+  id?: string;
+  content: string;
+  category?: string;
+  source: string;
+  score: number;
+  salience?: number;
 }
 
 export async function fetchMemoryEntries(
@@ -640,12 +654,13 @@ export async function fetchMemoryEntries(
 
 export async function addMemoryEntry(
   content: string,
-  category: string = "general"
+  category: string = "general",
+  salience: number = 0.5
 ): Promise<MemoryEntry> {
   const res = await fetch(`${API_BASE}/api/memory/entries`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, category }),
+    body: JSON.stringify({ content, category, salience }),
   });
   if (!res.ok) {
     const err = await res.json();
@@ -688,16 +703,18 @@ export async function deleteDailyLog(date: string): Promise<void> {
 
 export async function searchMemory(
   query: string,
-  topK: number = 5
-): Promise<string> {
+  topK: number = 5,
+  useDecay: boolean = true,
+  category?: string
+): Promise<{ results: MemorySearchResult[]; total: number }> {
   const res = await fetch(`${API_BASE}/api/memory/search`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, top_k: topK }),
+    body: JSON.stringify({ query, top_k: topK, use_decay: useDecay, category }),
   });
   if (!res.ok) throw new Error("Memory search failed");
   const data = await res.json();
-  return data.result;
+  return { results: data.results || [], total: data.total || 0 };
 }
 
 export async function fetchMemoryStats(): Promise<MemoryStats> {

@@ -26,7 +26,8 @@ from engine.events import serialize_sse
 from engine.middleware import DebugMiddleware, DebugLevel
 from engine import events
 from tools.rag_tool import rebuild_index
-from memory_manager import memory_manager
+from memory.manager import memory_manager
+from memory.models import VALID_CATEGORIES, CATEGORY_LABELS
 
 # 配置日志：同时输出到 console 和文件
 _log_dir = Path(settings.data_dir).expanduser().resolve() / "logs"
@@ -120,15 +121,41 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error(f"Periodic cache cleanup failed: {e}")
 
-    # Start cleanup task in background
+    # 定期记忆归档任务：每天凌晨 3 点执行（以 24 小时周期检查）
+    async def archive_loop():
+        """定期归档旧日志：超过 archive_days 的日志摘要归档，超过 delete_days 的删除。"""
+        while True:
+            await asyncio.sleep(86400)  # 24 小时
+            try:
+                logger.info("Running periodic memory archive...")
+                from memory.archiver import cleanup_old_logs
+                result = await cleanup_old_logs(
+                    archive_days=settings.memory_archive_days,
+                    delete_days=settings.memory_delete_days,
+                )
+                archived_count = len(result.get("archived", []))
+                deleted_count = len(result.get("deleted", []))
+                error_count = len(result.get("errors", []))
+                logger.info(
+                    "Periodic archive completed: archived=%d, deleted=%d, errors=%d",
+                    archived_count, deleted_count, error_count,
+                )
+            except Exception as e:
+                logger.error(f"Periodic memory archive failed: {e}")
+
+    # Start background tasks
     cleanup_task = asyncio.create_task(cleanup_loop())
     logger.info("Cache cleanup task started (runs every hour)")
+    archive_task = asyncio.create_task(archive_loop())
+    logger.info("Memory archive task started (runs every 24h)")
 
     yield
 
     # Shutdown
     cleanup_task.cancel()
     logger.info("Cache cleanup task stopped")
+    archive_task.cancel()
+    logger.info("Memory archive task stopped")
 
     # Shutdown MCP servers
     if settings.mcp_enabled:
@@ -204,6 +231,29 @@ async def chat(request: ChatRequest):
 
     # Save user message
     session_manager.save_message(request.session_id, "user", request.message)
+
+    # 检测用户纠正（异步，不阻塞主流程）
+    if settings.memory_reflection_enabled:
+        try:
+            from memory.reflector import detect_user_correction, process_user_correction
+            correction = detect_user_correction(request.message)
+            if correction:
+                # 获取前一次工具调用（从会话历史中查找）
+                prev_history = session_manager.get_session(request.session_id)
+                previous_tool_call = None
+                for msg in reversed(prev_history[:-1]):
+                    if msg.get("tool_calls"):
+                        calls = msg["tool_calls"]
+                        if calls:
+                            previous_tool_call = calls[-1] if isinstance(calls, list) else calls
+                        break
+                asyncio.create_task(process_user_correction(
+                    request.message,
+                    previous_tool_call=previous_tool_call,
+                    session_id=request.session_id,
+                ))
+        except Exception as e:
+            logger.debug(f"User correction detection skipped: {e}")
 
     # Get session history (exclude the message we just saved, it's already in the input)
     history = session_manager.get_session(request.session_id)[:-1]
@@ -910,11 +960,14 @@ async def get_store_categories():
 class MemoryEntryRequest(BaseModel):
     content: str
     category: str = "general"
+    salience: float = 0.5  # 重要性评分 (0.0-1.0)
 
 
 class MemorySearchRequest(BaseModel):
     query: str
     top_k: int = 5
+    use_decay: bool = True  # 是否使用时间衰减
+    category: Optional[str] = None  # 分类过滤
 
 
 @app.get("/api/memory/entries")
@@ -923,7 +976,7 @@ async def list_memory_entries(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
-    """List MEMORY.md entries with optional category filter and pagination."""
+    """List memory.json entries with optional category filter and pagination."""
     try:
         entries = memory_manager.get_entries(category=category)
         total = len(entries)
@@ -942,11 +995,16 @@ async def list_memory_entries(
 
 @app.post("/api/memory/entries")
 async def add_memory_entry(request: MemoryEntryRequest):
-    """Add a new memory entry to MEMORY.md."""
+    """Add a new memory entry to memory.json."""
     if not request.content.strip():
         raise HTTPException(status_code=400, detail="Content cannot be empty")
     try:
-        entry = memory_manager.add_entry(request.content, request.category)
+        entry = memory_manager.add_entry(
+            content=request.content,
+            category=request.category,
+            salience=request.salience,
+            source="api",
+        )
         return {"status": "ok", "entry": entry}
     except Exception as e:
         logger.error(f"Failed to add memory entry: {e}")
@@ -986,13 +1044,22 @@ async def daily_log_by_date(date: str, request: Request):
 
 @app.post("/api/memory/search")
 async def search_memory(request: MemorySearchRequest):
-    """Search across all memory files."""
+    """Search across all memory files with optional decay and category filter."""
     if not request.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
     try:
-        from tools.memory_search_tool import memory_search as ms_tool
-        result = ms_tool.invoke({"query": request.query, "top_k": request.top_k})
-        return {"query": request.query, "result": result}
+        from memory.search import search_memories
+        results = search_memories(
+            query=request.query,
+            top_k=request.top_k,
+            use_decay=request.use_decay,
+            category=request.category,
+        )
+        return {
+            "query": request.query,
+            "results": results,
+            "total": len(results),
+        }
     except Exception as e:
         logger.error(f"Memory search failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1013,11 +1080,90 @@ async def get_memory_stats():
 async def reindex_memory():
     """Force rebuild the memory search index."""
     try:
-        from tools.memory_search_tool import rebuild_memory_index
+        from memory.search import rebuild_memory_index
         result = rebuild_memory_index()
         return {"status": "ok", "message": result}
     except Exception as e:
         logger.error(f"Failed to reindex memory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ConsolidateRequest(BaseModel):
+    content: str
+    category: str = "general"
+    salience: float = 0.5
+
+
+@app.post("/api/memory/consolidate")
+async def consolidate_memory_entry(request: ConsolidateRequest):
+    """Consolidate a memory using ADD/UPDATE/DELETE/NOOP decision logic."""
+    if not request.content.strip():
+        raise HTTPException(status_code=400, detail="Content cannot be empty")
+    try:
+        from memory.consolidator import consolidate_memory
+        result = await consolidate_memory(
+            content=request.content,
+            category=request.category,
+            salience=request.salience,
+            source="api",
+        )
+        return {"status": "ok", **result}
+    except Exception as e:
+        logger.error(f"Memory consolidation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/memory/archive")
+async def archive_old_logs(
+    archive_days: int = Query(30, ge=1, description="Days before archiving"),
+    delete_days: int = Query(60, ge=1, description="Days before deletion"),
+):
+    """Archive old daily logs and cleanup."""
+    try:
+        from memory.archiver import cleanup_old_logs
+        result = await cleanup_old_logs(archive_days, delete_days)
+        return {"status": "ok", **result}
+    except Exception as e:
+        logger.error(f"Archive failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/memory/procedural")
+async def list_procedural_memories(
+    tool: Optional[str] = Query(None, description="Filter by tool name"),
+):
+    """List procedural memories (tool usage experiences)."""
+    try:
+        memories = memory_manager.get_procedural_memories(tool=tool)
+        return {"procedural": memories, "total": len(memories)}
+    except Exception as e:
+        logger.error(f"Failed to list procedural memories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/memory/rolling-summary")
+async def get_rolling_summary():
+    """Get the rolling summary of memories."""
+    try:
+        summary = memory_manager.get_rolling_summary()
+        return {"summary": summary}
+    except Exception as e:
+        logger.error(f"Failed to get rolling summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RollingSummaryRequest(BaseModel):
+    summary: str
+
+
+@app.put("/api/memory/rolling-summary")
+async def set_rolling_summary(request: RollingSummaryRequest):
+    """Set the rolling summary of memories."""
+    try:
+        memory_manager.set_rolling_summary(request.summary)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Failed to set rolling summary: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1184,6 +1330,14 @@ class SettingsUpdateRequest(BaseModel):
     memory_daily_log_days: Optional[int] = None
     memory_max_prompt_tokens: Optional[int] = None
     memory_index_enabled: Optional[bool] = None
+    # Memory v2 configuration
+    memory_consolidation_enabled: Optional[bool] = None
+    memory_reflection_enabled: Optional[bool] = None
+    memory_archive_days: Optional[int] = None
+    memory_delete_days: Optional[int] = None
+    memory_decay_lambda: Optional[float] = None
+    memory_implicit_recall_enabled: Optional[bool] = None
+    memory_implicit_recall_top_k: Optional[int] = None
     # MCP configuration
     mcp_enabled: Optional[bool] = None
     mcp_tool_cache_ttl: Optional[int] = None
@@ -1315,6 +1469,14 @@ async def get_settings():
         "memory_daily_log_days": int(env.get("MEMORY_DAILY_LOG_DAYS", "2")),
         "memory_max_prompt_tokens": int(env.get("MEMORY_MAX_PROMPT_TOKENS", "4000")),
         "memory_index_enabled": env.get("MEMORY_INDEX_ENABLED", "true").lower() == "true",
+        # Memory v2 configuration
+        "memory_consolidation_enabled": env.get("MEMORY_CONSOLIDATION_ENABLED", "true").lower() == "true",
+        "memory_reflection_enabled": env.get("MEMORY_REFLECTION_ENABLED", "true").lower() == "true",
+        "memory_archive_days": int(env.get("MEMORY_ARCHIVE_DAYS", "30")),
+        "memory_delete_days": int(env.get("MEMORY_DELETE_DAYS", "60")),
+        "memory_decay_lambda": float(env.get("MEMORY_DECAY_LAMBDA", "0.05")),
+        "memory_implicit_recall_enabled": env.get("MEMORY_IMPLICIT_RECALL_ENABLED", "true").lower() == "true",
+        "memory_implicit_recall_top_k": int(env.get("MEMORY_IMPLICIT_RECALL_TOP_K", "3")),
         # MCP configuration
         "mcp_enabled": env.get("MCP_ENABLED", "true").lower() == "true",
         "mcp_tool_cache_ttl": int(env.get("MCP_TOOL_CACHE_TTL", "3600")),
@@ -1372,6 +1534,14 @@ async def update_settings(request: SettingsUpdateRequest):
         "MEMORY_DAILY_LOG_DAYS": str(request.memory_daily_log_days) if request.memory_daily_log_days is not None else None,
         "MEMORY_MAX_PROMPT_TOKENS": str(request.memory_max_prompt_tokens) if request.memory_max_prompt_tokens is not None else None,
         "MEMORY_INDEX_ENABLED": str(request.memory_index_enabled).lower() if request.memory_index_enabled is not None else None,
+        # Memory v2 configuration
+        "MEMORY_CONSOLIDATION_ENABLED": str(request.memory_consolidation_enabled).lower() if request.memory_consolidation_enabled is not None else None,
+        "MEMORY_REFLECTION_ENABLED": str(request.memory_reflection_enabled).lower() if request.memory_reflection_enabled is not None else None,
+        "MEMORY_ARCHIVE_DAYS": str(request.memory_archive_days) if request.memory_archive_days is not None else None,
+        "MEMORY_DELETE_DAYS": str(request.memory_delete_days) if request.memory_delete_days is not None else None,
+        "MEMORY_DECAY_LAMBDA": str(request.memory_decay_lambda) if request.memory_decay_lambda is not None else None,
+        "MEMORY_IMPLICIT_RECALL_ENABLED": str(request.memory_implicit_recall_enabled).lower() if request.memory_implicit_recall_enabled is not None else None,
+        "MEMORY_IMPLICIT_RECALL_TOP_K": str(request.memory_implicit_recall_top_k) if request.memory_implicit_recall_top_k is not None else None,
         # MCP configuration
         "MCP_ENABLED": str(request.mcp_enabled).lower() if request.mcp_enabled is not None else None,
         "MCP_TOOL_CACHE_TTL": str(request.mcp_tool_cache_ttl) if request.mcp_tool_cache_ttl is not None else None,
