@@ -9,7 +9,7 @@ import logging
 import time
 from typing import Any
 
-from langchain_core.messages import AIMessage, ToolMessage, SystemMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 
 from engine.llm_factory import get_llm
@@ -40,14 +40,12 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
     tools = config.get("configurable", {}).get("agent_tools", [])
     tool_map = {t.name: t for t in tools}
 
-    system_prompt = state.get("system_prompt", "")
     messages = list(state["messages"])
+    # 记录初始消息数量，用于计算新增消息（add_messages reducer 只需要新增部分）
+    initial_message_count = len(messages)
 
-    logger.info("[%s] Agent 节点开始, max_iter=%d, tools=%d", sid, max_iterations, len(tools))
-
-    # 确保系统提示在消息列表最前面
-    if messages and not isinstance(messages[0], SystemMessage):
-        messages.insert(0, SystemMessage(content=system_prompt))
+    logger.info("[%s] Agent 节点开始, max_iter=%d, tools=%d, 初始消息=%d",
+                sid, max_iterations, len(tools), initial_message_count)
 
     from config import settings as _settings
     llm_timeout = _settings.llm_request_timeout
@@ -132,10 +130,13 @@ async def agent_node(state: AgentState, config: RunnableConfig) -> dict[str, Any
     if iterations >= max_iterations:
         logger.warning("[%s] Agent 达到最大迭代次数 (%d)，强制终止", sid, max_iterations)
 
-    logger.info("[%s] Agent 节点结束: outcome=%s, iterations=%d", sid, agent_outcome, iterations)
+    # 只返回新增的消息，避免 add_messages reducer 重复累积已有消息
+    new_messages = messages[initial_message_count:]
+    logger.info("[%s] Agent 节点结束: outcome=%s, iterations=%d, 新增消息=%d",
+                sid, agent_outcome, iterations, len(new_messages))
 
     result: dict[str, Any] = {
-        "messages": messages,
+        "messages": new_messages,
         "agent_outcome": agent_outcome,
         "agent_iterations": iterations,
     }

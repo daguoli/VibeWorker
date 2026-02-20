@@ -11,14 +11,13 @@ import asyncio
 import logging
 from typing import AsyncGenerator
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
 
 from engine.config_loader import load_graph_config, get_node_config
 from engine.context import RunContext
 from engine import events
 from engine.graph_builder import get_or_build_graph
-from engine.messages import convert_history
 from engine.stream_adapter import stream_graph_events
 from engine.tool_resolver import resolve_tools, resolve_executor_tools
 
@@ -126,9 +125,13 @@ async def _run_uncached(message, session_history, ctx, mws):
                 sid, len(agent_tools), len(executor_tools))
 
     # 3. 构建初始状态
+    # 注意：历史消息由 LangGraph checkpointer 管理，这里只发送新消息
+    # SystemMessage 使用固定 ID，确保 add_messages reducer 正确替换而非追加
     system_prompt = build_system_prompt()
-    messages = convert_history(session_history)
-    messages.append(HumanMessage(content=message))
+    messages = [
+        SystemMessage(content=system_prompt, id="system-prompt"),
+        HumanMessage(content=message),
+    ]
 
     logger.info("[%s] 系统提示已构建, 长度=%d, 历史消息=%d",
                 sid, len(system_prompt), len(messages))
