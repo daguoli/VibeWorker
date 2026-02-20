@@ -418,7 +418,8 @@ export async function testModelConnection(params: {
 export async function sendApproval(
   requestId: string,
   approved: boolean,
-  feedback?: string
+  feedback?: string,
+  action?: "approve" | "deny" | "instruct"
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/approve`, {
     method: "POST",
@@ -427,6 +428,7 @@ export async function sendApproval(
       request_id: requestId,
       approved,
       feedback: feedback || null,
+      action: action || (approved ? "approve" : "deny"),
     }),
   });
   if (!res.ok) {

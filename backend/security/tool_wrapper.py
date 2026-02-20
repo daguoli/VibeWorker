@@ -38,6 +38,10 @@ def create_secured_tool(original_tool: BaseTool) -> BaseTool:
         allowed, reason, feedback = await security_gate.check_permission(tool_name, kwargs)
 
         if not allowed:
+            # 检查是否是用户指示（instruct action）
+            if reason.startswith("[用户指示]"):
+                logger.info(f"Tool {tool_name} 收到用户指示: {reason}")
+                return f"⚠️ 用户要求你重新考虑：{reason}"
             logger.info(f"Tool {tool_name} blocked: {reason}")
             return f"⛔ Operation denied: {reason}"
 

@@ -473,28 +473,31 @@ async def approve_plan(request: PlanApprovalRequest):
 class ApprovalRequest(BaseModel):
     request_id: str
     approved: bool
-    feedback: Optional[str] = None  # 用户可选的反馈/指示，将注入给 LLM
+    feedback: Optional[str] = None  # 用户可选的反馈/指示
+    action: Optional[str] = None  # "approve" | "deny" | "instruct"
 
 
 @app.post("/api/approve")
 async def approve_tool(request: ApprovalRequest):
     """Approve or deny a pending tool execution request.
 
-    用户可以提供可选的 feedback，这些指示会注入到工具执行结果中，
-    让 LLM 在后续处理时遵循用户的要求。
+    action 类型：
+    - approve: 批准执行工具，可选附带 feedback
+    - deny: 拒绝执行工具
+    - instruct: 不执行工具，将 feedback 作为指示返回给 agent 重新思考
     """
     try:
         from security import security_gate
         resolved = security_gate.resolve_approval(
             request.request_id,
             request.approved,
-            feedback=request.feedback
+            feedback=request.feedback,
+            action=request.action or ("approve" if request.approved else "deny")
         )
         if resolved:
             return {"status": "ok", "request_id": request.request_id, "approved": request.approved}
         else:
             # 审批请求已过期（超时自动拒绝）或已被处理，返回 200 而非 404
-            # 操作已被拒绝，前端只需关闭对话框即可
             logger.info("审批请求 %s 已过期或已处理", request.request_id)
             return {"status": "expired", "request_id": request.request_id}
     except Exception as e:

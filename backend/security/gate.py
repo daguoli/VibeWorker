@@ -34,7 +34,8 @@ class PendingApproval:
     risk_level: RiskLevel
     event: asyncio.Event = field(default_factory=asyncio.Event)
     approved: Optional[bool] = None
-    feedback: Optional[str] = None  # 用户提供的反馈/指示，将注入给 LLM
+    feedback: Optional[str] = None  # 用户提供的反馈/指示
+    action: str = "deny"  # "approve" | "deny" | "instruct"
     timeout: float = 60.0
     created_at: float = field(default_factory=time.time)
 
@@ -223,7 +224,22 @@ class SecurityGate:
         # Check result
         approved = pending.approved
         feedback = pending.feedback
+        action = pending.action
         self._cleanup_pending(request_id)
+
+        # action="instruct": 用户发送指示让 agent 重新思考，不执行工具
+        if action == "instruct" and feedback:
+            if self._audit_enabled:
+                audit_logger.log(
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    risk_level=risk_level.value,
+                    action="instruct",
+                    request_id=request_id,
+                    feedback=feedback,
+                )
+            # 返回 False 阻止工具执行，但将用户指示作为 reason 返回给 agent
+            return False, f"[用户指示] {feedback}", None
 
         if approved:
             if self._audit_enabled:
@@ -247,13 +263,21 @@ class SecurityGate:
                 )
             return False, "User denied the operation", None
 
-    def resolve_approval(self, request_id: str, approved: bool, feedback: Optional[str] = None) -> bool:
+    def resolve_approval(
+        self,
+        request_id: str,
+        approved: bool,
+        feedback: Optional[str] = None,
+        action: str = "deny"
+    ) -> bool:
         """Resolve a pending approval request.
 
         Args:
             request_id: 请求 ID
             approved: 是否批准
-            feedback: 用户提供的反馈/指示，将注入给 LLM
+            feedback: 用户提供的反馈/指示
+            action: "approve" | "deny" | "instruct"
+                - instruct: 不执行工具，将 feedback 返回给 agent 重新思考
 
         Returns True if the request was found and resolved.
         """
@@ -264,6 +288,7 @@ class SecurityGate:
 
         pending.approved = approved
         pending.feedback = feedback.strip() if feedback else None
+        pending.action = action
         pending.event.set()
         return True
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Shield, ShieldAlert, ShieldCheck, ShieldX, Timer, ChevronDown, ChevronRight } from "lucide-react";
+import { Shield, ShieldAlert, ShieldCheck, ShieldX, Timer, ChevronDown, ChevronRight, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -111,6 +111,23 @@ export default function ApprovalDialog({
         [request, sending, onResolved, onAllowForSession, feedback]
     );
 
+    // 发送指示让 agent 重新思考（不执行工具）
+    const handleInstruct = useCallback(
+        async () => {
+            if (!request || sending || !feedback.trim()) return;
+            setSending(true);
+            try {
+                await sendApproval(request.request_id, false, feedback.trim(), "instruct");
+            } catch (err) {
+                console.warn("Failed to send instruction (may have expired):", err);
+            } finally {
+                setSending(false);
+                onResolved();
+            }
+        },
+        [request, sending, feedback, onResolved]
+    );
+
     if (!request) return null;
 
     const toolDisplay = getToolDisplay(request.tool);
@@ -170,7 +187,7 @@ export default function ApprovalDialog({
                         </div>
                     </div>
 
-                    {/* 可选的用户反馈/指示 */}
+                    {/* 其他指示：让 agent 重新思考 */}
                     <div className="border-t border-border/50 pt-3">
                         <button
                             type="button"
@@ -182,7 +199,7 @@ export default function ApprovalDialog({
                             ) : (
                                 <ChevronRight className="w-3 h-3" />
                             )}
-                            <span>额外指示</span>
+                            <span>其他指示</span>
                         </button>
                         {showFeedback && (
                             <div className="mt-2 animate-in slide-in-from-top-2 duration-200">
@@ -191,6 +208,17 @@ export default function ApprovalDialog({
                                     onChange={(e) => setFeedback(e.target.value)}
                                     className="w-full h-16 px-3 py-2 text-xs rounded-lg border border-border bg-background resize-none focus:outline-none focus:ring-2 focus:ring-primary/20"
                                 />
+                                <div className="mt-2 flex justify-end">
+                                    <Button
+                                        size="sm"
+                                        onClick={handleInstruct}
+                                        disabled={sending || !feedback.trim()}
+                                        className="h-7 text-xs"
+                                    >
+                                        <Send className="w-3 h-3 mr-1" />
+                                        发送指示
+                                    </Button>
+                                </div>
                             </div>
                         )}
                     </div>
