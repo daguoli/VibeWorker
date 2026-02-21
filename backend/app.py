@@ -491,7 +491,7 @@ async def _do_session_reflect(session_id: str, tool_calls_log: list) -> None:
         from memory.session_reflector import reflect_on_session, execute_reflect_results
         recent_messages = session_manager.get_session(session_id)[-10:]
         results = await reflect_on_session(recent_messages, tool_calls_log, session_id)
-        if results:
+        if results and (results.get("decisions") or results.get("session_summary")):
             await execute_reflect_results(results, session_id)
     except Exception as e:
         logger.warning(f"Session reflect failed: {e}")

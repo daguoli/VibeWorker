@@ -20,13 +20,13 @@ async def reflect_on_session(
     session_messages: list[dict],
     tool_calls: list[dict],
     session_id: str,
-) -> list[dict]:
+) -> dict:
     """会话结束后统一反思 — 1 次 LLM 调用完成所有记忆工作
 
     工作流程：
     1. 从 session_messages 提取关键词，搜索 top-10 现有相关记忆
     2. 构建统一 Prompt（对话摘要 + 工具调用时间线 + 现有记忆）
-    3. 1 次 LLM 调用，输出 JSON 数组：[{action, content, category, salience, target_id?, reason}]
+    3. 1 次 LLM 调用，输出 JSON 对象：{session_summary, decisions: [{action, content, ...}]}
     4. 执行 ADD/UPDATE/NOOP 决策
 
     Args:
@@ -35,10 +35,10 @@ async def reflect_on_session(
         session_id: 会话 ID
 
     Returns:
-        LLM 返回的决策列表
+        包含 session_summary 和 decisions 的字典
     """
     if not session_messages:
-        return []
+        return {"decisions": [], "session_summary": ""}
 
     try:
         # 1. 构建对话摘要
@@ -51,7 +51,7 @@ async def reflect_on_session(
         conversation = "\n".join(conversation_lines)
 
         if not conversation.strip():
-            return []
+            return {"decisions": [], "session_summary": ""}
 
         # 2. 提取关键词并搜索现有记忆
         existing_memories = []
@@ -109,15 +109,24 @@ async def reflect_on_session(
 1. 只提取确定性的事实和偏好，不要猜测
 2. 优先提取：用户偏好、重要事实、工具使用经验（尤其是失败后的教训）
 3. 忽略临时性、一次性的信息（如"今天天气怎么样"）
-4. 如果对话中没有值得记录的信息，返回空数组 []
-5. 如果新信息与现有记忆重复或矛盾，使用 UPDATE（提供 target_id）
-6. 如果是全新信息，使用 ADD
-7. 工具执行失败的经验应记录为 procedural 分类
+4. 如果新信息与现有记忆重复或矛盾，使用 UPDATE（提供 target_id）
+5. 如果是全新信息，使用 ADD
+6. 工具执行失败的经验应记录为 procedural 分类
 
-返回 JSON 数组，每项格式：
-{{"action": "ADD|UPDATE|NOOP", "content": "具体内容", "category": "preferences|facts|tasks|reflections|procedural|general", "salience": 0.5, "target_id": "仅 UPDATE 时提供", "reason": "简要说明"}}
+返回 JSON 对象，格式如下：
+{{
+  "session_summary": "用一句自然语言概括本次对话的核心内容，侧重用户的意图和结果。例如：'用户查询了北京到上海的火车票，获得了2月25日的车次列表'、'用户希望购买机票但因价格过高未下单'、'用户设置了周六下午3点的开会提醒'。如果对话是闲聊、打招呼、无实质内容，则设为空字符串 ''",
+  "decisions": [
+    {{"action": "ADD|UPDATE|NOOP", "content": "具体内容", "category": "preferences|facts|tasks|reflections|procedural|general", "salience": 0.5, "target_id": "仅 UPDATE 时提供", "reason": "简要说明"}}
+  ]
+}}
 
-返回 JSON 数组："""
+注意：
+- decisions 数组可以为空（无值得长期记忆的信息）
+- session_summary 只在对话有实际价值时才填写；闲聊、寒暄、简单问候等无实质内容的对话设为空字符串
+- 如果 decisions 为空且 session_summary 为空，表示本次对话无需任何记录
+
+返回 JSON 对象："""
 
         # 6. 调用 LLM（唯一的一次调用）
         from engine.llm_factory import create_llm
@@ -126,32 +135,42 @@ async def reflect_on_session(
         result = response.content.strip()
 
         # 7. 解析 JSON
-        results = _parse_llm_response(result)
-        logger.info("会话反思完成: session=%s, 决策=%d 条", session_id, len(results))
-        return results
+        parsed = _parse_llm_response(result)
+        results = parsed.get("decisions", [])
+        session_summary = parsed.get("session_summary", "")
+        logger.info("会话反思完成: session=%s, 决策=%d 条, 摘要=%s", session_id, len(results), session_summary[:50])
+        return {"decisions": results, "session_summary": session_summary}
 
     except Exception as e:
         logger.error("会话反思失败: %s", e)
-        return []
+        return {"decisions": [], "session_summary": ""}
 
 
 async def execute_reflect_results(
-    results: list[dict],
+    results: dict | list,
     session_id: str,
 ) -> None:
     """执行反思决策结果
 
     Args:
-        results: LLM 返回的决策列表
+        results: LLM 返回的决策（新格式为 dict 含 decisions + session_summary，兼容旧格式 list）
         session_id: 会话 ID
     """
     from memory.manager import memory_manager
     from memory.models import VALID_CATEGORIES
 
+    # 兼容新旧格式
+    if isinstance(results, dict):
+        decisions = results.get("decisions", [])
+        session_summary = results.get("session_summary", "")
+    else:
+        decisions = results
+        session_summary = ""
+
     add_count = 0
     update_count = 0
 
-    for item in results:
+    for item in decisions:
         action = item.get("action", "NOOP").upper()
         content = item.get("content", "").strip()
         category = item.get("category", "general")
@@ -198,14 +217,22 @@ async def execute_reflect_results(
         except Exception as e:
             logger.warning("执行反思决策失败 (action=%s): %s", action, e)
 
-    # 写入一条日记汇总
-    if add_count > 0 or update_count > 0:
-        summary = f"会话反思: {add_count} 条新记忆, {update_count} 条更新"
+    # 写入对话摘要到日志（始终写入，无论是否产生新记忆）
+    if session_summary:
         memory_manager.append_daily_log(
-            content=summary,
+            content=session_summary,
             log_type="reflection",
         )
-        logger.info("会话反思执行完毕: %s (session=%s)", summary, session_id)
+        logger.info("会话反思执行完毕: %s, %d 条新记忆, %d 条更新 (session=%s)",
+                     session_summary, add_count, update_count, session_id)
+    elif add_count > 0 or update_count > 0:
+        # 兜底：如果没有摘要但有记忆变更，仍记录一条
+        memory_manager.append_daily_log(
+            content=f"会话产生 {add_count} 条新记忆, {update_count} 条更新",
+            log_type="reflection",
+        )
+        logger.info("会话反思执行完毕: %d 条新记忆, %d 条更新 (session=%s)",
+                     add_count, update_count, session_id)
 
 
 def _extract_json(text: str) -> str:
@@ -219,21 +246,30 @@ def _extract_json(text: str) -> str:
     return text.strip()
 
 
-def _parse_llm_response(result: str) -> list[dict]:
-    """解析 LLM 返回的 JSON 数组
+def _parse_llm_response(result: str) -> dict:
+    """解析 LLM 返回的 JSON 对象（含 session_summary + decisions）
 
-    处理 markdown 代码块包裹和格式异常。
+    兼容旧格式（纯数组）和新格式（对象），处理 markdown 代码块包裹和格式异常。
     """
     result = _extract_json(result)
 
     try:
         parsed = json.loads(result)
-        if not isinstance(parsed, list):
-            return []
 
-        # 验证和清理
+        # 新格式：{"session_summary": "...", "decisions": [...]}
+        if isinstance(parsed, dict):
+            session_summary = parsed.get("session_summary", "")
+            decisions_raw = parsed.get("decisions", [])
+        # 旧格式兼容：纯数组
+        elif isinstance(parsed, list):
+            session_summary = ""
+            decisions_raw = parsed
+        else:
+            return {"session_summary": "", "decisions": []}
+
+        # 验证和清理 decisions
         valid = []
-        for item in parsed:
+        for item in decisions_raw:
             if not isinstance(item, dict):
                 continue
             action = item.get("action", "NOOP").upper()
@@ -244,8 +280,8 @@ def _parse_llm_response(result: str) -> list[dict]:
                 continue
             valid.append(item)
 
-        return valid
+        return {"session_summary": session_summary, "decisions": valid}
 
     except json.JSONDecodeError:
         logger.warning("无法解析反思结果 JSON: %s", result[:200])
-        return []
+        return {"session_summary": "", "decisions": []}
