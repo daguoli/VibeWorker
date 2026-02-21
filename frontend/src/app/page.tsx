@@ -170,9 +170,7 @@ export default function HomePage() {
       <header className="h-12 flex items-center justify-between px-4 border-b border-border/40 glass-subtle shrink-0 z-50">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[var(--vw-blue)] to-[#0958d9] flex items-center justify-center shadow-sm">
-              <span className="text-white text-xs font-bold">V</span>
-            </div>
+            <img src="/logo.png" alt="VibeWorker Logo" className="w-6 h-6" />
             <h1 className="text-sm font-semibold tracking-tight">
               VibeWorker
             </h1>

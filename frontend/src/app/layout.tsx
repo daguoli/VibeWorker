@@ -18,6 +18,10 @@ export const metadata: Metadata = {
   description:
     "VibeWorker 是一个运行在本地的、拥有真实记忆的 AI 数字员工系统。文件即记忆，技能即插件，完全透明可控。",
   keywords: ["AI Agent", "VibeWorker", "Digital Worker", "LangChain", "Memory"],
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({
