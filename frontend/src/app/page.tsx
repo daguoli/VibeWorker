@@ -167,7 +167,15 @@ export default function HomePage() {
   const handleSessionSelect = useCallback((sessionId: string) => {
     setCurrentSessionId(sessionId);
     setCurrentView("chat");
-  }, []);
+    // debug 模式下切换会话时，自动重置右侧面板为调试窗口
+    if (debugMode) {
+      setInspectorFile(null);
+      setInspectorMode("file");
+      setInspectorMemoryEntry(null);
+      setInspectorDailyLogEntry(null);
+      setShowInspector(true);
+    }
+  }, [debugMode]);
 
   // ---- Drag resize logic ----
   const handleMouseDown = useCallback((side: "left" | "right") => {
