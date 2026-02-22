@@ -362,8 +362,18 @@ export default function ChatPanel({
                             }`}
                     >
                         {msg.role === "user" ? (
-                            <div className="max-w-[75%] px-4 py-3 rounded-2xl rounded-tr-md bg-[var(--vw-blue)] text-white shadow-sm">
-                                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                            <div
+                                className="max-w-[75%] px-4 py-3 rounded-2xl rounded-tr-md bg-[var(--vw-blue)] text-white shadow-sm"
+                                onCopy={(e) => {
+                                    // 浏览器选中 block 元素时会在首尾附带多余换行，手动清理
+                                    const sel = window.getSelection()?.toString();
+                                    if (sel) {
+                                        e.preventDefault();
+                                        e.clipboardData.setData("text/plain", sel.replace(/^\n+|\n+$/g, ""));
+                                    }
+                                }}
+                            >
+                                <span className="text-sm whitespace-pre-wrap block">{msg.content}</span>
                             </div>
                         ) : (
                             <div className="max-w-[90%]">
