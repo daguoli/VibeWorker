@@ -240,7 +240,10 @@ async def stream_graph_events(
     sid = config.get("configurable", {}).get("session_id", "unknown")
 
     debug_tracking = {}
-    seen_event_count = 0  # pending_events 消费计数器
+    # 使用事件指纹去重（替代旧的 seen_event_count 计数器）。
+    # 拆分 executor_pre + executor 后，每个节点的 on_chain_end 输出只含
+    # 该节点自身的 pending_events（非累积值），计数器方式会导致事件丢失。
+    seen_event_fps: set[str] = set()
     token_counts = {}  # 按节点统计 token 数量
     think_filter = ThinkTagFilter()  # 过滤推理模型的 <think> 标签
 
@@ -323,17 +326,19 @@ async def stream_graph_events(
             yield events.build_tool_end_from_raw(event, duration_ms)
 
         elif kind == "on_chain_end":
-            # 从节点输出中提取 pending_events
+            # 从节点输出中提取 pending_events（侧通道 SSE 事件）
             output = (event.get("data") or {}).get("output", {})
             if isinstance(output, dict):
                 pending = output.get("pending_events", [])
                 if isinstance(pending, list):
-                    # 只 yield 新增的事件
-                    new_events = pending[seen_event_count:]
-                    for pe in new_events:
+                    for pe in pending:
                         if isinstance(pe, dict) and "type" in pe:
-                            yield pe
-                    seen_event_count = len(pending)
+                            # 构造事件指纹用于去重：同一事件可能在不同层级的
+                            # on_chain_end 中重复出现（节点级 vs 图级）
+                            fp = f"{pe.get('type')}:{pe.get('plan_id','')}:{pe.get('step_id','')}:{pe.get('status','')}"
+                            if fp not in seen_event_fps:
+                                seen_event_fps.add(fp)
+                                yield pe
 
     # 流结束，刷新 think 标签过滤器缓冲区（输出可能残留的非 think 内容）
     remaining = think_filter.flush()
