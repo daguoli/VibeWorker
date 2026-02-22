@@ -795,6 +795,27 @@ export async function reindexMemory(): Promise<string> {
   return data.message;
 }
 
+export interface CompressMemoryResult {
+  status: "ok" | "skip";
+  reason?: string;
+  before: number;
+  after: number;
+  merged: number;
+  kept: number;
+  clusters: number;
+}
+
+export async function compressMemory(): Promise<CompressMemoryResult> {
+  const res = await fetch(`${API_BASE}/api/memory/compress`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "压缩记忆失败");
+  }
+  return await res.json();
+}
+
 export async function fetchRollingSummary(): Promise<string> {
   const res = await fetch(`${API_BASE}/api/memory/rolling-summary`);
   if (!res.ok) throw new Error("Failed to fetch rolling summary");

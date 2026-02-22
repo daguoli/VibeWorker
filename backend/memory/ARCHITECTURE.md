@@ -243,6 +243,7 @@ backend/memory/
 ├── search.py                # 搜索逻辑（向量 + 关键词 + 衰减）
 ├── session_reflector.py     # 会话反思器（1 次 LLM 调用完成提取+整合）
 ├── consolidator.py          # 整合器（Agent memory_write 工具的 ADD/UPDATE/DELETE 决策）
+├── compressor.py            # 压缩器（合并相似记忆、重评重要性）
 ├── archiver.py              # 日志归档（摘要 + 清理）
 └── ARCHITECTURE.md          # 本文档
 ```
@@ -282,6 +283,15 @@ backend/memory/
 - LLM 生成摘要
 - 重要内容提升为长期记忆
 - 60天后删除原始日志
+
+**compressor.py (压缩器)**
+- 手动触发：`POST /api/memory/compress` 或前端"整理记忆"按钮
+- 按分类分组记忆
+- 向量聚类（相似度 ≥ 0.85 归为一组）
+- LLM 合并同类记忆 + 重评 salience
+- 原子性更新 memory.json
+- 自动清除向量索引（确保后续搜索使用新数据）
+- 压缩前自动备份为 `.pre-compress`
 
 ---
 
@@ -332,6 +342,7 @@ consolidator.py           # Agent 主动写入时的整合决策
 |------|------|------|
 | `/api/memory/consolidate` | POST | 手动触发记忆整合 |
 | `/api/memory/archive` | POST | 手动触发日志归档 |
+| `/api/memory/compress` | POST | 压缩整理长期记忆（合并相似、重评重要性） |
 | `/api/memory/procedural` | GET | 获取程序性记忆列表 |
 | `/api/memory/rolling-summary` | GET/PUT | 管理滚动摘要 |
 
@@ -355,7 +366,7 @@ MEMORY_ARCHIVE_DAYS=30                # 归档阈值（天）
 MEMORY_DELETE_DAYS=60                 # 删除阈值（天）
 MEMORY_DECAY_LAMBDA=0.05              # 衰减系数（14天衰减到50%）
 MEMORY_IMPLICIT_RECALL_ENABLED=true   # 隐式召回开关
-MEMORY_IMPLICIT_RECALL_TOP_K=3        # 隐式召回数量
+MEMORY_IMPLICIT_RECALL_TOP_K=10       # 隐式召回数量
 
 # 继承自 v1
 MEMORY_DAILY_LOG_DAYS=2               # Prompt 加载日志天数

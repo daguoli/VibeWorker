@@ -204,6 +204,7 @@ POST   /api/memory/search               # 搜索（支持 use_decay/category）
 GET    /api/memory/stats                 # 统计
 POST   /api/memory/reindex              # 重建索引
 POST   /api/memory/consolidate          # 智能整合（ADD/UPDATE/DELETE/NOOP）
+POST   /api/memory/compress             # 压缩整理（合并相似记忆、重评重要性）
 POST   /api/memory/archive              # 归档旧日志
 GET    /api/memory/procedural           # 程序性记忆
 GET/PUT /api/memory/rolling-summary     # 滚动摘要

@@ -1179,6 +1179,36 @@ async def archive_old_logs(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/memory/compress")
+async def compress_memory_entries():
+    """压缩整理长期记忆 — 合并相似记忆，重评重要性
+
+    功能：
+    1. 按分类分组记忆
+    2. 向量聚类（相似度 ≥ 0.85 归为一组）
+    3. LLM 合并同类记忆 + 重评 salience
+    4. 原子性更新 memory.json
+    5. 清除向量索引
+
+    Returns:
+        {
+            "status": "ok" | "skip",
+            "before": 压缩前条目数,
+            "after": 压缩后条目数,
+            "merged": 被合并的条目数,
+            "kept": 保留原样的条目数,
+            "clusters": 合并的聚类数,
+        }
+    """
+    try:
+        from memory.compressor import compress_memories
+        result = await compress_memories()
+        return result
+    except Exception as e:
+        logger.error(f"Memory compression failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/memory/procedural")
 async def list_procedural_memories(
     tool: Optional[str] = Query(None, description="Filter by tool name"),

@@ -27,6 +27,7 @@ from memory.session_reflector import (
     reflect_on_session,
     execute_reflect_results,
 )
+from memory.compressor import compress_memories
 
 __all__ = [
     "memory_manager",
@@ -40,4 +41,6 @@ __all__ = [
     # 会话反思器
     "reflect_on_session",
     "execute_reflect_results",
+    # 记忆压缩器
+    "compress_memories",
 ]

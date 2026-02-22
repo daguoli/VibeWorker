@@ -18,6 +18,7 @@ import {
     Zap,
     ChevronDown,
     Brain,
+    Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -37,12 +38,27 @@ import {
     reindexMemory,
     fetchDailyLogEntries,
     deleteDailyLogEntry,
+    compressMemory,
     type MemoryEntry,
     type MemoryStats,
     type MemorySearchResult,
     type DailyLog,
     type DailyLogEntry,
 } from "@/lib/api";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+    Dialog,
+    DialogContent,
+} from "@/components/ui/dialog";
 import AddMemoryDialog from "./AddMemoryDialog";
 
 type MemoryTab = "short-term" | "long-term" | "persona";
@@ -155,6 +171,15 @@ export default function MemoryPanel({
 
     // 操作状态
     const [isReindexing, setIsReindexing] = useState(false);
+
+    // 压缩记忆状态
+    const [isCompressing, setIsCompressing] = useState(false);
+    const [showCompressConfirm, setShowCompressConfirm] = useState(false);
+    const [compressResult, setCompressResult] = useState<{
+        before: number;
+        after: number;
+        merged: number;
+    } | null>(null);
 
     // 短期记忆：展开的日期和条目
     const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
@@ -386,6 +411,31 @@ export default function MemoryPanel({
             // 忽略
         } finally {
             setIsReindexing(false);
+        }
+    };
+
+    const handleCompress = async () => {
+        setShowCompressConfirm(false);
+        setIsCompressing(true);
+        setCompressResult(null);
+        try {
+            const result = await compressMemory();
+            // 刷新列表和统计
+            await loadEntries();
+            await loadStats();
+            // 保存结果用于显示
+            if (result.status === "ok") {
+                setCompressResult({
+                    before: result.before,
+                    after: result.after,
+                    merged: result.merged,
+                });
+            }
+        } catch (err) {
+            // 失败时也设置一个特殊状态
+            console.error("压缩失败:", err);
+        } finally {
+            setIsCompressing(false);
         }
     };
 
@@ -824,7 +874,21 @@ export default function MemoryPanel({
                                 <div className="px-2 pt-2 pb-1 border-t border-border/30 mt-2">
                                     <div className="flex items-center justify-between text-[9px] text-muted-foreground/40">
                                         <span>{stats.total_entries} 条记忆</span>
-                                        <span>v{stats.version || 2}</span>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <button
+                                                    onClick={() => setShowCompressConfirm(true)}
+                                                    disabled={isCompressing || stats.total_entries < 2}
+                                                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    <Sparkles className="w-2.5 h-2.5" />
+                                                    <span>整理</span>
+                                                </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                                合并相似记忆，重评重要性
+                                            </TooltipContent>
+                                        </Tooltip>
                                     </div>
                                 </div>
                             )}
@@ -858,6 +922,86 @@ export default function MemoryPanel({
                 onOpenChange={setShowAddDialog}
                 onAdded={handleAddMemoryDone}
             />
+
+            {/* 压缩确认弹窗 */}
+            <AlertDialog open={showCompressConfirm} onOpenChange={setShowCompressConfirm}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-amber-500" />
+                            整理长期记忆
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="space-y-2">
+                            <p>此操作将自动整理你的长期记忆：</p>
+                            <ul className="list-disc list-inside text-xs space-y-1 text-muted-foreground">
+                                <li>合并相似的记忆条目</li>
+                                <li>去除冗余信息</li>
+                                <li>重新评估记忆的重要性</li>
+                            </ul>
+                            <p className="text-xs text-muted-foreground/70 pt-1">
+                                整理前会自动备份，可从 memory.json.pre-compress 恢复。
+                            </p>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>取消</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleCompress}
+                            className="bg-amber-500 hover:bg-amber-600"
+                        >
+                            开始整理
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* 压缩进度弹窗 */}
+            <Dialog open={isCompressing}>
+                <DialogContent className="sm:max-w-md [&>button]:hidden">
+                    <div className="flex flex-col items-center py-6 gap-4">
+                        <div className="relative">
+                            <Sparkles className="w-10 h-10 text-amber-500 animate-pulse" />
+                            <Loader2 className="w-5 h-5 animate-spin text-amber-600 absolute -bottom-1 -right-1" />
+                        </div>
+                        <div className="text-center space-y-1">
+                            <p className="text-sm font-medium">正在整理记忆...</p>
+                            <p className="text-xs text-muted-foreground">
+                                分析相似度、合并内容、重评重要性
+                            </p>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* 压缩完成提示 */}
+            <Dialog open={compressResult !== null} onOpenChange={() => setCompressResult(null)}>
+                <DialogContent className="sm:max-w-sm">
+                    <div className="flex flex-col items-center py-4 gap-3">
+                        <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                            <Sparkles className="w-6 h-6 text-green-600" />
+                        </div>
+                        <div className="text-center space-y-1">
+                            <p className="text-sm font-medium">整理完成</p>
+                            {compressResult && (
+                                <p className="text-xs text-muted-foreground">
+                                    {compressResult.before} 条 → {compressResult.after} 条
+                                    {compressResult.merged > 0 && (
+                                        <span className="text-amber-600">
+                                            {" "}（合并了 {compressResult.merged} 条）
+                                        </span>
+                                    )}
+                                </p>
+                            )}
+                        </div>
+                        <button
+                            onClick={() => setCompressResult(null)}
+                            className="mt-2 px-4 py-1.5 text-xs rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                        >
+                            完成
+                        </button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
