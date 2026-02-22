@@ -19,6 +19,7 @@ import {
     ChevronDown,
     Brain,
     Sparkles,
+    AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -44,6 +45,8 @@ import {
     type MemorySearchResult,
     type DailyLog,
     type DailyLogEntry,
+    type MergeDetail,
+    type CompressMemoryResult,
 } from "@/lib/api";
 import {
     AlertDialog,
@@ -177,11 +180,10 @@ export default function MemoryPanel({
     // 压缩记忆状态
     const [isCompressing, setIsCompressing] = useState(false);
     const [showCompressConfirm, setShowCompressConfirm] = useState(false);
-    const [compressResult, setCompressResult] = useState<{
-        before: number;
-        after: number;
-        merged: number;
-    } | null>(null);
+    const [showFallbackConfirm, setShowFallbackConfirm] = useState(false);  // 降级确认
+    const [compressResult, setCompressResult] = useState<CompressMemoryResult | null>(null);
+    const [detailPage, setDetailPage] = useState(0);
+    const DETAILS_PER_PAGE = 3;
 
     // 短期记忆：展开的日期和条目
     const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
@@ -416,23 +418,27 @@ export default function MemoryPanel({
         }
     };
 
-    const handleCompress = async () => {
+    const handleCompress = async (forceTextSimilarity: boolean = false) => {
         setShowCompressConfirm(false);
+        setShowFallbackConfirm(false);
         setIsCompressing(true);
         setCompressResult(null);
+        setDetailPage(0);
         try {
-            const result = await compressMemory();
+            const result = await compressMemory(forceTextSimilarity);
+
+            // 检查是否需要降级
+            if (result.status === "embedding_unavailable") {
+                setIsCompressing(false);
+                setShowFallbackConfirm(true);
+                return;
+            }
+
             // 刷新列表和统计
             await loadEntries();
             await loadStats();
-            // 保存结果用于显示
-            if (result.status === "ok") {
-                setCompressResult({
-                    before: result.before,
-                    after: result.after,
-                    merged: result.merged,
-                });
-            }
+            // 保存完整结果用于显示
+            setCompressResult(result);
         } catch (err) {
             // 失败时也设置一个特殊状态
             console.error("压缩失败:", err);
@@ -948,10 +954,44 @@ export default function MemoryPanel({
                     <AlertDialogFooter>
                         <AlertDialogCancel>取消</AlertDialogCancel>
                         <AlertDialogAction
-                            onClick={handleCompress}
+                            onClick={() => handleCompress(false)}
                             className="bg-amber-500 hover:bg-amber-600"
                         >
                             开始整理
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* embedding 不可用，降级确认弹窗 */}
+            <AlertDialog open={showFallbackConfirm} onOpenChange={setShowFallbackConfirm}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-500" />
+                            Embedding 模型不可用
+                        </AlertDialogTitle>
+                        <AlertDialogDescription asChild>
+                            <div className="space-y-2 text-sm text-muted-foreground">
+                                <span className="block">
+                                    当前配置的 embedding 模型无法访问，无法使用向量相似度进行记忆合并。
+                                </span>
+                                <span className="block">
+                                    是否降级为<span className="text-primary font-medium">文本相似度算法</span>？
+                                </span>
+                                <span className="block text-xs text-muted-foreground/70 pt-1">
+                                    文本相似度算法基于 n-gram 匹配，对中文友好，但精度略低于向量相似度。
+                                </span>
+                            </div>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>取消</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={() => handleCompress(true)}
+                            className="bg-amber-500 hover:bg-amber-600"
+                        >
+                            使用文本相似度
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
@@ -978,8 +1018,8 @@ export default function MemoryPanel({
             </Dialog>
 
             {/* 压缩完成提示 */}
-            <Dialog open={compressResult !== null} onOpenChange={() => setCompressResult(null)}>
-                <DialogContent className="sm:max-w-sm">
+            <Dialog open={compressResult !== null} onOpenChange={() => { setCompressResult(null); setDetailPage(0); }}>
+                <DialogContent className="sm:max-w-md">
                     <DialogTitle className="sr-only">整理完成</DialogTitle>
                     <DialogDescription className="sr-only">记忆整理已完成</DialogDescription>
                     <div className="flex flex-col items-center py-4 gap-3">
@@ -999,8 +1039,78 @@ export default function MemoryPanel({
                                 </p>
                             )}
                         </div>
+
+                        {/* 合并详情 */}
+                        {compressResult?.merge_details && compressResult.merge_details.length > 0 && (
+                            <div className="w-full mt-2 space-y-2">
+                                <p className="text-xs font-medium text-muted-foreground text-center">
+                                    合并详情 ({compressResult.merge_details.length} 组)
+                                </p>
+                                <div className="space-y-2 max-h-60 overflow-y-auto">
+                                    {compressResult.merge_details
+                                        .slice(detailPage * DETAILS_PER_PAGE, (detailPage + 1) * DETAILS_PER_PAGE)
+                                        .map((detail, idx) => (
+                                            <div
+                                                key={detailPage * DETAILS_PER_PAGE + idx}
+                                                className="p-2 rounded-lg bg-accent/50 border border-border/30 text-left"
+                                            >
+                                                <div className="flex items-center gap-1 mb-1.5">
+                                                    <span className="text-[10px] px-1.5 py-px rounded-full bg-primary/10 text-primary/70">
+                                                        {CATEGORY_LABELS[detail.category] || detail.category}
+                                                    </span>
+                                                    <span className="text-[10px] text-muted-foreground/50">
+                                                        {detail.from.length} 条 → 1 条
+                                                    </span>
+                                                </div>
+                                                {/* 原始记忆 */}
+                                                <div className="space-y-1 mb-2">
+                                                    {detail.from.map((item, i) => (
+                                                        <div key={item.id} className="flex items-start gap-1">
+                                                            <span className="text-[9px] text-red-400 shrink-0 mt-0.5">✗</span>
+                                                            <p className="text-[10px] text-muted-foreground line-clamp-2 break-words">
+                                                                {item.content}
+                                                            </p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                {/* 合并结果 */}
+                                                <div className="flex items-start gap-1 pt-1.5 border-t border-border/30">
+                                                    <span className="text-[9px] text-green-500 shrink-0 mt-0.5">✓</span>
+                                                    <p className="text-[10px] text-foreground/80 line-clamp-2 break-words">
+                                                        {detail.to.content}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                </div>
+
+                                {/* 分页控制 */}
+                                {compressResult.merge_details.length > DETAILS_PER_PAGE && (
+                                    <div className="flex items-center justify-center gap-2 pt-1">
+                                        <button
+                                            onClick={() => setDetailPage((p) => Math.max(0, p - 1))}
+                                            disabled={detailPage === 0}
+                                            className="px-2 py-0.5 text-[10px] rounded bg-accent hover:bg-accent/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            上一页
+                                        </button>
+                                        <span className="text-[10px] text-muted-foreground">
+                                            {detailPage + 1} / {Math.ceil(compressResult.merge_details.length / DETAILS_PER_PAGE)}
+                                        </span>
+                                        <button
+                                            onClick={() => setDetailPage((p) => Math.min(Math.ceil(compressResult.merge_details.length / DETAILS_PER_PAGE) - 1, p + 1))}
+                                            disabled={detailPage >= Math.ceil(compressResult.merge_details.length / DETAILS_PER_PAGE) - 1}
+                                            className="px-2 py-0.5 text-[10px] rounded bg-accent hover:bg-accent/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            下一页
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         <button
-                            onClick={() => setCompressResult(null)}
+                            onClick={() => { setCompressResult(null); setDetailPage(0); }}
                             className="mt-2 px-4 py-1.5 text-xs rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
                         >
                             完成

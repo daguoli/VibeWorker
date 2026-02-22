@@ -287,11 +287,43 @@ backend/memory/
 **compressor.py (压缩器)**
 - 手动触发：`POST /api/memory/compress` 或前端"整理记忆"按钮
 - 按分类分组记忆
-- 向量聚类（相似度 ≥ 0.80 归为一组）
+- 向量聚类（相似度 ≥ 0.75 归为一组）
 - LLM 合并同类记忆 + 重评 salience
 - 原子性更新 memory.json
 - 自动清除向量索引（确保后续搜索使用新数据）
 - 压缩前自动备份为 `.pre-compress`
+- **后备方案**：当 embedding 模型不可用时，自动提示用户降级
+- **文本相似度**：后备算法使用 n-gram Jaccard 相似度（对中文友好）
+
+**压缩流程（含降级确认）：**
+```
+前端点击"整理记忆"
+    ↓
+POST /api/memory/compress
+    ↓
+首次 embedding 调用
+    ↓
+┌─────────────────────────┐
+│ embedding 成功？        │
+├────┬────────────────────┤
+│ 是 │ 继续向量聚类      │
+├────┼────────────────────┤
+│ 否 │ 返回 status=       │
+│    │ "embedding_        │
+│    │ unavailable"       │
+└────┴────────────────────┘
+    ↓ (失败时)
+前端显示降级确认对话框
+    ↓
+用户选择：
+├─ 取消 → 退出任务
+└─ 使用文本相似度 →
+   POST /api/memory/compress?force_text_similarity=true
+    ↓
+使用 n-gram 文本相似度完成聚类
+    ↓
+LLM 合并 + 返回结果
+```
 
 ---
 
@@ -342,7 +374,7 @@ consolidator.py           # Agent 主动写入时的整合决策
 |------|------|------|
 | `/api/memory/consolidate` | POST | 手动触发记忆整合 |
 | `/api/memory/archive` | POST | 手动触发日志归档 |
-| `/api/memory/compress` | POST | 压缩整理长期记忆（合并相似、重评重要性） |
+| `/api/memory/compress` | POST | 压缩整理长期记忆（合并相似、重评重要性），支持 `force_text_similarity` 参数降级 |
 | `/api/memory/procedural` | GET | 获取程序性记忆列表 |
 | `/api/memory/rolling-summary` | GET/PUT | 管理滚动摘要 |
 

@@ -2,10 +2,14 @@
 
 功能：
 1. 按分类分组记忆
-2. 向量聚类（相似度 ≥ 0.85 归为一组）
+2. 向量聚类（相似度 ≥ 0.75 归为一组）
 3. LLM 合并同类记忆 + 重评 salience
 4. 原子性更新 memory.json
 5. 清除向量索引（确保后续搜索使用新数据）
+
+后备方案：
+- 当 embedding 模型不可用时，自动切换到文本相似度算法
+- 使用 n-gram Jaccard 相似度（对中文友好）
 
 触发方式：
 - 手动调用 POST /api/memory/compress
@@ -47,6 +51,64 @@ def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     return dot_product / (norm_a * norm_b)
 
 
+def _text_similarity(text_a: str, text_b: str) -> float:
+    """计算两段文本的相似度（后备方案，当 embedding 不可用时）
+
+    使用多种方法的组合：
+    1. 字符级 n-gram Jaccard 相似度
+    2. 最长公共子序列比例
+    3. 字符集重叠度
+
+    这种方法对中文很友好，因为中文每个字符都有独立含义
+    """
+    if not text_a or not text_b:
+        return 0.0
+
+    # 移除空格
+    text_a = text_a.replace(" ", "").replace("　", "")
+    text_b = text_b.replace(" ", "").replace("　", "")
+
+    # 1. 字符级 2-gram Jaccard 相似度
+    def get_ngrams(text: str, n: int = 2) -> set:
+        return {text[i:i+n] for i in range(len(text) - n + 1)} if len(text) >= n else set()
+
+    ngrams_a_2 = get_ngrams(text_a, 2)
+    ngrams_b_2 = get_ngrams(text_b, 2)
+    if ngrams_a_2 and ngrams_b_2:
+        intersection_2 = ngrams_a_2 & ngrams_b_2
+        union_2 = ngrams_a_2 | ngrams_b_2
+        jaccard_2 = len(intersection_2) / len(union_2)
+    else:
+        jaccard_2 = 0.0
+
+    # 2. 字符级 3-gram Jaccard 相似度
+    ngrams_a_3 = get_ngrams(text_a, 3)
+    ngrams_b_3 = get_ngrams(text_b, 3)
+    if ngrams_a_3 and ngrams_b_3:
+        intersection_3 = ngrams_a_3 & ngrams_b_3
+        union_3 = ngrams_a_3 | ngrams_b_3
+        jaccard_3 = len(intersection_3) / len(union_3)
+    else:
+        jaccard_3 = 0.0
+
+    # 3. 字符集重叠度（unigram）
+    chars_a = set(text_a)
+    chars_b = set(text_b)
+    if chars_a and chars_b:
+        char_overlap = len(chars_a & chars_b) / len(chars_a | chars_b)
+    else:
+        char_overlap = 0.0
+
+    # 4. 长度相似度（惩罚长度差异过大的文本）
+    len_a, len_b = len(text_a), len(text_b)
+    len_sim = min(len_a, len_b) / max(len_a, len_b) if max(len_a, len_b) > 0 else 0.0
+
+    # 综合得分（2-gram 0.4 + 3-gram 0.3 + 字符重叠 0.2 + 长度 0.1）
+    score = 0.4 * jaccard_2 + 0.3 * jaccard_3 + 0.2 * char_overlap + 0.1 * len_sim
+
+    return score
+
+
 async def get_embedding(text: str) -> Optional[list[float]]:
     """获取文本的向量表示
 
@@ -84,9 +146,15 @@ async def get_embedding(text: str) -> Optional[list[float]]:
         return None
 
 
+class EmbeddingUnavailableError(Exception):
+    """embedding 模型不可用异常，用于通知调用方需要降级"""
+    pass
+
+
 async def _cluster_by_similarity(
     entries: list[MemoryEntry],
     threshold: float = CLUSTER_SIMILARITY_THRESHOLD,
+    force_text_similarity: bool = False,
 ) -> list[list[MemoryEntry]]:
     """基于向量相似度的聚类
 
@@ -95,12 +163,19 @@ async def _cluster_by_similarity(
     2. 计算两两相似度矩阵
     3. 合并相似度 ≥ threshold 的记忆对
 
+    后备方案：
+    - 当 embedding 不可用时，使用文本相似度（Jaccard + n-gram）
+
     Args:
         entries: 同分类的记忆条目列表
         threshold: 相似度阈值
+        force_text_similarity: 强制使用文本相似度（用户确认降级后）
 
     Returns:
         聚类列表，每个聚类是一组相似的记忆
+
+    Raises:
+        EmbeddingUnavailableError: 首次 embedding 失败时抛出，让调用方询问用户
     """
     if not entries:
         return []
@@ -108,13 +183,26 @@ async def _cluster_by_similarity(
     n = len(entries)
     logger.info(f"开始聚类 {n} 条记忆，阈值: {threshold}")
 
-    # 获取所有 embedding
-    embeddings: list[Optional[list[float]]] = []
-    for entry in entries:
-        emb = await get_embedding(entry.content)
-        if emb is None:
-            logger.warning(f"记忆 [{entry.id}] 获取 embedding 失败")
-        embeddings.append(emb)
+    # 如果强制使用文本相似度，跳过 embedding 获取
+    if force_text_similarity:
+        logger.info("使用文本相似度模式（用户已确认降级）")
+        embeddings = [None] * n
+        use_text_fallback = True
+    else:
+        # 获取第一个 embedding 来检测模型是否可用
+        first_emb = await get_embedding(entries[0].content)
+        if first_emb is None:
+            # 第一次就失败，抛出异常让调用方询问用户
+            logger.warning("embedding 模型不可用，需要用户确认是否降级")
+            raise EmbeddingUnavailableError("embedding 模型不可用")
+
+        # 第一个成功，继续获取剩余的 embedding
+        embeddings: list[Optional[list[float]]] = [first_emb]
+        for entry in entries[1:]:
+            emb = await get_embedding(entry.content)
+            embeddings.append(emb)
+
+        use_text_fallback = False
 
     # 使用 Union-Find 进行聚类
     parent = list(range(n))
@@ -131,18 +219,30 @@ async def _cluster_by_similarity(
 
     # 计算两两相似度，合并相似的记忆
     for i in range(n):
-        if embeddings[i] is None:
-            continue
         for j in range(i + 1, n):
-            if embeddings[j] is None:
+            # 计算相似度
+            if use_text_fallback:
+                # 后备方案：文本相似度
+                sim = _text_similarity(entries[i].content, entries[j].content)
+                method = "text"
+            elif embeddings[i] is not None and embeddings[j] is not None:
+                # 正常情况：向量相似度
+                sim = _cosine_similarity(embeddings[i], embeddings[j])
+                method = "vector"
+            elif embeddings[i] is None or embeddings[j] is None:
+                # 部分 embedding 失败，对这一对使用文本相似度
+                sim = _text_similarity(entries[i].content, entries[j].content)
+                method = "text-partial"
+            else:
                 continue
-            sim = _cosine_similarity(embeddings[i], embeddings[j])
+
             # 记录相似度较高的比较
-            if sim >= 0.6:
+            if sim >= 0.5:
                 logger.info(
-                    f"相似度: [{entries[i].id}] vs [{entries[j].id}] = {sim:.3f} "
-                    f"{'✓ 合并' if sim >= threshold else '✗ 不合并'}"
+                    f"相似度 [{method}]: [{entries[i].id}] vs [{entries[j].id}] = {sim:.3f} "
+                    f"{'=> 合并' if sim >= threshold else '=> 不合并'}"
                 )
+
             if sim >= threshold:
                 union(i, j)
 
@@ -153,7 +253,7 @@ async def _cluster_by_similarity(
         clusters_map.setdefault(root, []).append(entry)
 
     clusters = list(clusters_map.values())
-    logger.info(f"聚类完成: {n} 条记忆 → {len(clusters)} 个聚类")
+    logger.info(f"聚类完成: {n} 条记忆 -> {len(clusters)} 个聚类")
 
     return clusters
 
@@ -169,11 +269,11 @@ def _extract_json(text: str) -> str:
 async def _merge_cluster(
     cluster: list[MemoryEntry],
     category: str,
-) -> MemoryEntry:
+) -> tuple[MemoryEntry, dict]:
     """使用 LLM 合并一组相似记忆
 
     输入：同分类的多条相似记忆
-    输出：合并后的单条记忆（新 ID，重评 salience）
+    输出：(合并后的记忆, 合并详情)
     """
     from engine.llm_factory import create_llm
 
@@ -241,13 +341,20 @@ async def _merge_cluster(
         context={"merged_from": [e.id for e in cluster]},  # 追踪来源
     )
 
-    return new_entry
+    # 构建合并详情
+    merge_detail = {
+        "from": [{"id": e.id, "content": e.content} for e in cluster],
+        "to": {"id": new_entry.id, "content": new_entry.content},
+        "category": category,
+    }
+
+    return new_entry, merge_detail
 
 
 async def _batch_merge_clusters(
     clusters: list[tuple[str, list[MemoryEntry]]],
     max_concurrency: int = MAX_MERGE_CONCURRENCY,
-) -> list[MemoryEntry]:
+) -> tuple[list[MemoryEntry], list[dict]]:
     """批量合并聚类（限制并发数）
 
     Args:
@@ -255,19 +362,23 @@ async def _batch_merge_clusters(
         max_concurrency: 最大并发数
 
     Returns:
-        合并后的记忆列表
+        (合并后的记忆列表, 合并详情列表)
     """
     semaphore = asyncio.Semaphore(max_concurrency)
 
-    async def _merge_one(category: str, cluster: list[MemoryEntry]) -> MemoryEntry:
+    async def _merge_one(category: str, cluster: list[MemoryEntry]) -> tuple[MemoryEntry, dict]:
         async with semaphore:
             return await _merge_cluster(cluster, category)
 
     tasks = [_merge_one(cat, cluster) for cat, cluster in clusters]
-    return list(await asyncio.gather(*tasks))
+    results = await asyncio.gather(*tasks)
+
+    entries = [r[0] for r in results]
+    details = [r[1] for r in results]
+    return entries, details
 
 
-async def compress_memories() -> dict:
+async def compress_memories(force_text_similarity: bool = False) -> dict:
     """压缩长期记忆 — 主入口
 
     流程：
@@ -278,15 +389,21 @@ async def compress_memories() -> dict:
     5. 原子写入 memory.json
     6. 清除向量索引
 
+    Args:
+        force_text_similarity: 强制使用文本相似度（用户确认降级后传入 True）
+
     Returns:
         {
-            "status": "ok" | "skip",
+            "status": "ok" | "skip" | "embedding_unavailable",
             "before": 压缩前条目数,
             "after": 压缩后条目数,
             "merged": 被合并的条目数,
             "kept": 保留原样的条目数,
             "clusters": 合并的聚类数,
         }
+
+        当 status="embedding_unavailable" 时，表示 embedding 模型不可用，
+        前端应询问用户是否降级到文本相似度算法。
     """
     from memory.manager import memory_manager
     from memory.search import invalidate_memory_index
@@ -310,6 +427,7 @@ async def compress_memories() -> dict:
             "merged": 0,
             "kept": len(memories),
             "clusters": 0,
+            "merge_details": [],
         }
 
     # 3. 按分类分组
@@ -347,7 +465,24 @@ async def compress_memories() -> dict:
 
         # 4.1 向量聚类
         logger.info(f"正在聚类 [{category}] 分类的 {len(cat_entries)} 条记忆...")
-        clusters = await _cluster_by_similarity(cat_entries, CLUSTER_SIMILARITY_THRESHOLD)
+        try:
+            clusters = await _cluster_by_similarity(
+                cat_entries,
+                CLUSTER_SIMILARITY_THRESHOLD,
+                force_text_similarity=force_text_similarity,
+            )
+        except EmbeddingUnavailableError:
+            # embedding 不可用，返回特殊状态让前端询问用户
+            return {
+                "status": "embedding_unavailable",
+                "message": "embedding 模型不可用，是否降级为文本相似度算法？",
+                "before": len(memories),
+                "after": len(memories),
+                "merged": 0,
+                "kept": 0,
+                "clusters": 0,
+                "merge_details": [],
+            }
 
         # 4.2 分离需要合并的聚类和单条记忆
         for cluster in clusters:
@@ -362,9 +497,10 @@ async def compress_memories() -> dict:
                 stats["clusters"] += 1
 
     # 5. 批量 LLM 合并
+    merge_details: list[dict] = []
     if clusters_to_merge:
         logger.info(f"正在合并 {len(clusters_to_merge)} 个聚类...")
-        merged_entries = await _batch_merge_clusters(clusters_to_merge)
+        merged_entries, merge_details = await _batch_merge_clusters(clusters_to_merge)
         new_memories.extend(merged_entries)
 
     # 6. 原子写入
@@ -379,6 +515,7 @@ async def compress_memories() -> dict:
 
     stats["after"] = len(new_memories)
     stats["status"] = "ok"
+    stats["merge_details"] = merge_details
 
     logger.info(
         f"记忆压缩完成: {stats['before']} → {stats['after']} 条，"

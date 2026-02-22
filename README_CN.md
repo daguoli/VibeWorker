@@ -175,9 +175,10 @@ VibeWorker 采用四层记忆架构，借鉴 [Mem0](https://mem0.ai/) 的智能�
 - **智能整合 (Consolidation)**：新记忆写入时 LLM 自动决策 ADD / UPDATE / DELETE / NOOP，避免重复
 - **重要性评分 (Salience)**：0.0-1.0 评分，高重要性记忆优先召回
 - **时间衰减**：指数衰减曲线（λ=0.05，14 天衰减到 50%），新记忆权重更高
-- **隐式召回**：对话开始时自动检索 top-3 相关记忆 + 程序性记忆注入 System Prompt
+- **隐式召回**：对话开始时自动检索 top-10 相关记忆 + 程序性记忆注入 System Prompt
 - **程序性记忆**：自动从工具失败中学习，积累使用经验
 - **自动归档**：30 天摘要归档，60 天清理
+- **记忆压缩**：手动触发合并相似记忆，embedding 不可用时自动提示降级为文本相似度
 
 ### 记忆分类
 
@@ -378,6 +379,7 @@ vibeworker/
 | `/api/memory/entries` | GET/POST/DELETE | 记忆条目 CRUD |
 | `/api/memory/search` | POST | 搜索记忆（支持时间衰减） |
 | `/api/memory/consolidate` | POST | 智能整合（ADD/UPDATE/DELETE/NOOP） |
+| `/api/memory/compress` | POST | 压缩记忆（合并相似，支持文本相似度降级） |
 | `/api/memory/procedural` | GET | 程序性记忆 |
 | `/api/memory/archive` | POST | 归档旧日志 |
 | `/api/memory/daily-logs` | GET | 每日日志列表 |

@@ -175,7 +175,8 @@ VibeWorker features a 4-layer memory architecture inspired by [Mem0](https://mem
 - **Smart Consolidation**: LLM automatically decides ADD / UPDATE / DELETE / NOOP when new memories arrive, preventing duplicates
 - **Salience Scoring**: 0.0–1.0 importance scores, high-salience memories get priority recall
 - **Time Decay**: Exponential decay curve (λ=0.05, 50% at 14 days), recent memories weighted higher
-- **Implicit Recall**: Auto-retrieves top-3 relevant memories + procedural knowledge at conversation start
+- **Implicit Recall**: Auto-retrieves top-10 relevant memories + procedural knowledge at conversation start
+- **Memory Compression**: Manual trigger to merge similar memories, with text similarity fallback when embedding unavailable
 - **Procedural Learning**: Automatically learns from tool failures, accumulating usage experience
 - **Auto-archival**: 30-day summary archival, 60-day cleanup
 
@@ -378,6 +379,7 @@ vibeworker/
 | `/api/memory/entries` | GET/POST/DELETE | Memory entry CRUD |
 | `/api/memory/search` | POST | Search memories (with time decay) |
 | `/api/memory/consolidate` | POST | Smart consolidation (ADD/UPDATE/DELETE/NOOP) |
+| `/api/memory/compress` | POST | Compress memories (merge similar, with text fallback) |
 | `/api/memory/procedural` | GET | Procedural memories |
 | `/api/memory/archive` | POST | Archive old logs |
 | `/api/memory/daily-logs` | GET | Daily log list |

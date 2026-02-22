@@ -424,7 +424,7 @@ MEMORY_ARCHIVE_DAYS=30                    # 归档阈值（天）
 MEMORY_DELETE_DAYS=60                     # 删除阈值（天）
 MEMORY_DECAY_LAMBDA=0.05                  # 衰减系数（14天衰减到50%）
 MEMORY_IMPLICIT_RECALL_ENABLED=true       # 隐式召回开关
-MEMORY_IMPLICIT_RECALL_TOP_K=3            # 隐式召回数量
+MEMORY_IMPLICIT_RECALL_TOP_K=10           # 隐式召回数量
 ```
 
 ### 6. 会话存储 (Sessions)
@@ -544,6 +544,15 @@ MEMORY_IMPLICIT_RECALL_TOP_K=3            # 隐式召回数量
 + **Endpoint**: `POST /api/memory/consolidate` - 智能记忆整合。
     - Body: `{ "content": "...", "category": "...", "salience": 0.5 }`
     - 返回：`{ "decision": "ADD/UPDATE/DELETE/NOOP", "entry": {...} }`
++ **Endpoint**: `POST /api/memory/compress` - 压缩整理长期记忆 ✅ 已实现。
+    - Query 参数：`force_text_similarity`（强制使用文本相似度，可选）
+    - 返回：`{ "status": "ok/skip/embedding_unavailable", "before": n, "after": n, "merged": n, "merge_details": [...] }`
+    - 说明：
+        * 向量聚类（相似度 ≥ 0.75 归为一组）
+        * LLM 合并同类记忆 + 重评 salience
+        * 压缩前自动备份为 `.pre-compress`
+        * 当 `status="embedding_unavailable"` 时，前端显示降级确认，用户确认后带 `force_text_similarity=true` 重试
+        * 后备算法使用 n-gram Jaccard 文本相似度（对中文友好）
 + **Endpoint**: `POST /api/memory/archive` - 手动触发日志归档。
     - Query 参数：`archive_days`（归档阈值）、`delete_days`（删除阈值）
     - 返回：`{ "archived": [...], "deleted": [...], "errors": [...] }`

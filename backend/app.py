@@ -1180,29 +1180,34 @@ async def archive_old_logs(
 
 
 @app.post("/api/memory/compress")
-async def compress_memory_entries():
+async def compress_memory_entries(force_text_similarity: bool = False):
     """压缩整理长期记忆 — 合并相似记忆，重评重要性
 
     功能：
     1. 按分类分组记忆
-    2. 向量聚类（相似度 ≥ 0.85 归为一组）
+    2. 向量聚类（相似度 ≥ 0.75 归为一组）
     3. LLM 合并同类记忆 + 重评 salience
     4. 原子性更新 memory.json
     5. 清除向量索引
 
+    Args:
+        force_text_similarity: 强制使用文本相似度算法（当 embedding 不可用时）
+
     Returns:
         {
-            "status": "ok" | "skip",
+            "status": "ok" | "skip" | "embedding_unavailable",
             "before": 压缩前条目数,
             "after": 压缩后条目数,
             "merged": 被合并的条目数,
             "kept": 保留原样的条目数,
             "clusters": 合并的聚类数,
         }
+
+        当 status="embedding_unavailable" 时，前端应询问用户是否降级。
     """
     try:
         from memory.compressor import compress_memories
-        result = await compress_memories()
+        result = await compress_memories(force_text_similarity=force_text_similarity)
         return result
     except Exception as e:
         logger.error(f"Memory compression failed: {e}")

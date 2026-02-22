@@ -795,18 +795,30 @@ export async function reindexMemory(): Promise<string> {
   return data.message;
 }
 
+export interface MergeDetail {
+  from: { id: string; content: string }[];
+  to: { id: string; content: string };
+  category: string;
+}
+
 export interface CompressMemoryResult {
-  status: "ok" | "skip";
+  status: "ok" | "skip" | "embedding_unavailable";
   reason?: string;
+  message?: string;  // 当 status="embedding_unavailable" 时的提示消息
   before: number;
   after: number;
   merged: number;
   kept: number;
   clusters: number;
+  merge_details: MergeDetail[];
 }
 
-export async function compressMemory(): Promise<CompressMemoryResult> {
-  const res = await fetch(`${API_BASE}/api/memory/compress`, {
+export async function compressMemory(forceTextSimilarity: boolean = false): Promise<CompressMemoryResult> {
+  const url = new URL(`${API_BASE}/api/memory/compress`);
+  if (forceTextSimilarity) {
+    url.searchParams.set("force_text_similarity", "true");
+  }
+  const res = await fetch(url.toString(), {
     method: "POST",
   });
   if (!res.ok) {
