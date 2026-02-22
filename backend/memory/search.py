@@ -83,13 +83,25 @@ def build_or_load_memory_index():
 
 
 def _create_embed_model():
-    """创建 embedding 模型，使用 OpenAI SDK 直接调用（兼容阿里云等非标准 API）"""
+    """创建 embedding 模型，使用 OpenAI SDK 直接调用（兼容阿里云等非标准 API）
+
+    Returns:
+        CustomOpenAIEmbedding 实例，如果配置不可用则返回 None
+    """
     from llama_index.core.embeddings import BaseEmbedding
     from openai import OpenAI
     from model_pool import resolve_model
     from pydantic import PrivateAttr
 
-    emb_cfg = resolve_model("embedding")
+    try:
+        emb_cfg = resolve_model("embedding")
+        # 检查必要配置项
+        if not emb_cfg or not emb_cfg.get("api_key") or not emb_cfg.get("model"):
+            logger.warning("Embedding 模型配置不完整，跳过向量索引构建")
+            return None
+    except Exception as e:
+        logger.warning(f"无法获取 Embedding 模型配置: {e}，跳过向量索引构建")
+        return None
 
     class CustomOpenAIEmbedding(BaseEmbedding):
         """自定义 embedding 模型，直接使用 OpenAI SDK"""
@@ -131,11 +143,15 @@ def _create_embed_model():
         async def _aget_text_embedding(self, text: str) -> list[float]:
             return self._get_embedding(text)
 
-    return CustomOpenAIEmbedding(
-        api_key=emb_cfg["api_key"],
-        api_base=emb_cfg["api_base"],
-        model=emb_cfg["model"],
-    )
+    try:
+        return CustomOpenAIEmbedding(
+            api_key=emb_cfg["api_key"],
+            api_base=emb_cfg["api_base"],
+            model=emb_cfg["model"],
+        )
+    except Exception as e:
+        logger.warning(f"创建 Embedding 模型实例失败: {e}")
+        return None
 
 
 def _build_or_load_memory_index_locked():
@@ -153,6 +169,10 @@ def _build_or_load_memory_index_locked():
 
         # 使用自定义 embedding 模型（兼容所有 OpenAI 兼容 API）
         embed_model = _create_embed_model()
+        if embed_model is None:
+            # Embedding 模型不可用，静默返回，不构建索引
+            logger.info("Embedding 模型不可用，跳过向量索引构建（将使用关键词搜索）")
+            return
         LlamaSettings.embed_model = embed_model
 
         persist_dir = settings.storage_dir / "memory_index"
@@ -241,9 +261,9 @@ def _build_or_load_memory_index_locked():
         )
 
     except ImportError as e:
-        logger.warning(f"LlamaIndex 不可用: {e}")
+        logger.warning(f"LlamaIndex 不可用，将使用关键词搜索: {e}")
     except Exception as e:
-        logger.error(f"构建记忆索引失败: {e}")
+        logger.warning(f"构建记忆索引失败，将降级使用关键词搜索: {e}")
 
 
 def keyword_search(
