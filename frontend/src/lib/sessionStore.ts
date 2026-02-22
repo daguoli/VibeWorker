@@ -133,7 +133,10 @@ function extractLastLine(text: string, maxLen: number = 35): string {
   const lines = text.split("\n").filter(
     l => l.trim() && !l.trim().startsWith("[") && l.trim() !== "---"
   );
-  const line = lines[lines.length - 1]?.trim() || "";
+  let line = lines[lines.length - 1]?.trim() || "";
+  if (line.length < 8 && lines.length >= 2) {
+    line = lines[lines.length - 2]?.trim() || "";
+  } 
   return line.length > maxLen ? line.slice(0, maxLen) + "..." : line;
 }
 
