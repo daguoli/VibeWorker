@@ -112,34 +112,28 @@ def _text_similarity(text_a: str, text_b: str) -> float:
 async def get_embedding(text: str) -> Optional[list[float]]:
     """获取文本的向量表示
 
-    复用 LlamaIndex 的 embedding 模型配置
+    直接使用 OpenAI SDK，兼容所有 OpenAI 兼容的 API（如阿里云 DashScope）
     """
     try:
-        from llama_index.embeddings.openai import OpenAIEmbedding
+        from openai import AsyncOpenAI
         from model_pool import resolve_model
 
         emb_cfg = resolve_model("embedding")
 
-        try:
-            embed_model = OpenAIEmbedding(
-                model=emb_cfg["model"],
-                api_key=emb_cfg["api_key"],
-                api_base=emb_cfg["api_base"],
-            )
-        except (ValueError, Exception) as e:
-            if "is not a valid" in str(e):
-                # 非 OpenAI 标准模型名，使用兼容模式
-                embed_model = OpenAIEmbedding(
-                    api_key=emb_cfg["api_key"],
-                    api_base=emb_cfg["api_base"],
-                )
-                embed_model.__dict__["model"] = emb_cfg["model"]
-            else:
-                raise
+        client = AsyncOpenAI(
+            api_key=emb_cfg["api_key"],
+            base_url=emb_cfg["api_base"],
+            timeout=30,
+        )
 
-        # 获取 embedding
-        embedding = embed_model.get_text_embedding(text)
-        return embedding
+        response = await client.embeddings.create(
+            model=emb_cfg["model"],
+            input=text,
+        )
+
+        if response.data:
+            return response.data[0].embedding
+        return None
 
     except Exception as e:
         logger.warning(f"获取 embedding 失败: {e}")

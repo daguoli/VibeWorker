@@ -82,6 +82,62 @@ def build_or_load_memory_index():
         return _build_or_load_memory_index_locked()
 
 
+def _create_embed_model():
+    """创建 embedding 模型，使用 OpenAI SDK 直接调用（兼容阿里云等非标准 API）"""
+    from llama_index.core.embeddings import BaseEmbedding
+    from openai import OpenAI
+    from model_pool import resolve_model
+    from pydantic import PrivateAttr
+
+    emb_cfg = resolve_model("embedding")
+
+    class CustomOpenAIEmbedding(BaseEmbedding):
+        """自定义 embedding 模型，直接使用 OpenAI SDK"""
+
+        _client: OpenAI = PrivateAttr()
+        _model_name: str = PrivateAttr()
+
+        def __init__(self, api_key: str, api_base: str, model: str, **kwargs):
+            super().__init__(**kwargs)
+            self._client = OpenAI(
+                api_key=api_key,
+                base_url=api_base,
+                timeout=30,
+            )
+            self._model_name = model
+
+        @classmethod
+        def class_name(cls) -> str:
+            return "CustomOpenAIEmbedding"
+
+        def _get_embedding(self, text: str) -> list[float]:
+            """获取单个文本的 embedding"""
+            response = self._client.embeddings.create(
+                model=self._model_name,
+                input=text,
+            )
+            return response.data[0].embedding
+
+        def _get_query_embedding(self, query: str) -> list[float]:
+            return self._get_embedding(query)
+
+        def _get_text_embedding(self, text: str) -> list[float]:
+            return self._get_embedding(text)
+
+        async def _aget_query_embedding(self, query: str) -> list[float]:
+            # LlamaIndex 会在异步场景调用此方法，这里简单返回同步结果
+            return self._get_embedding(query)
+
+        async def _aget_text_embedding(self, text: str) -> list[float]:
+            return self._get_embedding(text)
+
+    return CustomOpenAIEmbedding(
+        api_key=emb_cfg["api_key"],
+        api_base=emb_cfg["api_base"],
+        model=emb_cfg["model"],
+    )
+
+
 def _build_or_load_memory_index_locked():
     """构建或加载索引的内部实现（需在 _index_lock 内调用）"""
     global _memory_index, _memory_query_engine, _index_dirty
@@ -94,28 +150,9 @@ def _build_or_load_memory_index_locked():
             Document,
             Settings as LlamaSettings,
         )
-        from llama_index.embeddings.openai import OpenAIEmbedding
 
-        # 通过模型池获取 Embedding 配置
-        from model_pool import resolve_model
-        emb_cfg = resolve_model("embedding")
-        try:
-            embed_model = OpenAIEmbedding(
-                model=emb_cfg["model"],
-                api_key=emb_cfg["api_key"],
-                api_base=emb_cfg["api_base"],
-            )
-        except (ValueError, Exception) as e:
-            if "is not a valid" in str(e):
-                # 非 OpenAI 标准模型名，使用兼容模式
-                logger.info("Embedding 模型 '%s' 非 OpenAI 标准模型，使用兼容模式", emb_cfg["model"])
-                embed_model = OpenAIEmbedding(
-                    api_key=emb_cfg["api_key"],
-                    api_base=emb_cfg["api_base"],
-                )
-                embed_model.__dict__["model"] = emb_cfg["model"]
-            else:
-                raise
+        # 使用自定义 embedding 模型（兼容所有 OpenAI 兼容 API）
+        embed_model = _create_embed_model()
         LlamaSettings.embed_model = embed_model
 
         persist_dir = settings.storage_dir / "memory_index"
