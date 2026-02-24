@@ -459,7 +459,7 @@ function DockerSandboxField({
         if (checked) {
             checkStatus();
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const checkStatus = async () => {
@@ -581,6 +581,7 @@ export default function SettingsDialog() {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [debugMode, setDebugMode] = useState(false);
+    const [browserMode, setBrowserMode] = useState<"OPEN_TAB" | "OPEN_POPUP">("OPEN_TAB");
     const [form, setForm] = useState<SettingsData>({
         openai_api_key: "",
         openai_api_base: "",
@@ -625,6 +626,8 @@ export default function SettingsDialog() {
         if (open) {
             const savedDebug = localStorage.getItem("vibeworker_debug") === "true";
             setDebugMode(savedDebug);
+            const savedBrowserMode = (localStorage.getItem("vibeworker_browser_mode") as "OPEN_TAB" | "OPEN_POPUP") || "OPEN_TAB";
+            setBrowserMode(savedBrowserMode);
             setLoading(true);
             fetchSettings()
                 .then((settingsData) => {
@@ -741,7 +744,41 @@ export default function SettingsDialog() {
                                     </button>
                                 </div>
                             </div>
-                            <div className="space-y-1">
+                            <div className="space-y-1.5 mt-4">
+                                <label className="text-xs font-medium text-muted-foreground">浏览器接管模式</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setBrowserMode("OPEN_TAB");
+                                            localStorage.setItem("vibeworker_browser_mode", "OPEN_TAB");
+                                        }}
+                                        className={`flex items-center justify-center gap-2 h-9 rounded-lg border text-xs font-medium transition-all ${browserMode === "OPEN_TAB"
+                                            ? "border-primary bg-primary/10 text-primary"
+                                            : "border-border bg-background text-muted-foreground hover:border-primary/30"
+                                            }`}
+                                    >
+                                        新标签页 (Tab)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setBrowserMode("OPEN_POPUP");
+                                            localStorage.setItem("vibeworker_browser_mode", "OPEN_POPUP");
+                                        }}
+                                        className={`flex items-center justify-center gap-2 h-9 rounded-lg border text-xs font-medium transition-all ${browserMode === "OPEN_POPUP"
+                                            ? "border-primary bg-primary/10 text-primary"
+                                            : "border-border bg-background text-muted-foreground hover:border-primary/30"
+                                            }`}
+                                    >
+                                        独立小窗 (Popup)
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-muted-foreground/60 mt-1">
+                                    大模型在调用浏览器打开网页时，使用的窗口形态。独立小窗更沉浸，新标签页兼容性更好。
+                                </p>
+                            </div>
+                            <div className="space-y-1 mt-4">
                                 <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                                     <FolderOpen className="w-3.5 h-3.5" />
                                     数据目录
@@ -826,9 +863,9 @@ export default function SettingsDialog() {
                                 type="number"
                                 placeholder="2"
                             />
-                                <p className="text-[10px] text-muted-foreground/60">
-                                    加载最近几天的工作事项概要
-                                </p>
+                            <p className="text-[10px] text-muted-foreground/60">
+                                加载最近几天的工作事项概要
+                            </p>
                             <SettingsField
                                 label="记忆占用最大 Token 量"
                                 value={String(form.memory_max_prompt_tokens)}

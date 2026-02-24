@@ -131,13 +131,10 @@ class DebugMiddleware:
             elif event_type == "llm_end":
                 self.collector.record_llm_end(event)
 
-        # STANDARD 级别：截断大 payload 以节省带宽
+        # STANDARD 级别：不再截断 payload，保留完整调试数据
         if self.level == DebugLevel.STANDARD:
-            if event_type == "llm_start" and len(event.get("input", "")) > 2000:
-                event = {**event, "input": event["input"][:2000] + "...[truncated]"}
-            if event_type == "llm_end" and len(event.get("output", "")) > 1000:
-                event = {**event, "output": event["output"][:1000] + "...[truncated]"}
-
+            pass
+            
         return event
 
     async def on_run_end(self, ctx: RunContext) -> None:

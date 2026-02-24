@@ -1,0 +1,30 @@
+// content-bridge.js
+// This script is injected into the VibeWorker Web App page (e.g., localhost:3000)
+// It listens for messages from the Web App and forwards them to the Extension Background.
+
+console.log('VibeWorker Content Bridge injected.');
+
+window.addEventListener('message', (event) => {
+    // Only accept messages from the same window
+    if (event.source !== window) {
+        return;
+    }
+
+    const message = event.data;
+
+    // We only care about messages intended for the extension
+    if (message && message.type === 'VIBEWORKER_EXTENSION_REQUEST') {
+        console.log('Content Bridge intercepting VibeWorker request:', message);
+
+        // Forward to the extension background script
+        chrome.runtime.sendMessage(message, (response) => {
+            console.log('Content Bridge received response from background:', response);
+
+            // Optionally send a response back to the Web App
+            window.postMessage({
+                type: 'VIBEWORKER_EXTENSION_RESPONSE',
+                payload: response
+            }, '*');
+        });
+    }
+});

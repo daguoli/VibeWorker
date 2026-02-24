@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useEffect, useCallback } from "react";
-import { streamChat, fetchSessionMessages, sendApproval, sendPlanApproval, type ChatMessage, type ToolCall, type MessageSegment, type Plan, type PlanStep, type PlanRevision, type DebugLLMCall, type DebugToolCall, type DebugDivider, type DebugPhase, type DebugCall, type SSEEvent } from "./api";
+import { streamChat, fetchSessionMessages, sendApproval, sendPlanApproval, sendBrowserCallback, type ChatMessage, type ToolCall, type MessageSegment, type Plan, type PlanStep, type PlanRevision, type DebugLLMCall, type DebugToolCall, type DebugDivider, type DebugPhase, type DebugCall, type SSEEvent } from "./api";
 
 // Helper to check if a debug call is an LLM call
 export function isLLMCall(call: DebugCall): call is DebugLLMCall {
@@ -63,6 +63,7 @@ export interface SessionState {
   messagesLoaded: boolean;
   messagesLoading: boolean;
   debugCalls: DebugCall[];
+  agentTabs: number[]; // Track tabs opened by the agent for lifecycle management
 }
 
 type Listener = () => void;
@@ -84,6 +85,7 @@ function defaultState(): SessionState {
     messagesLoaded: false,
     messagesLoading: false,
     debugCalls: [],
+    agentTabs: [],
   };
 }
 
@@ -144,8 +146,8 @@ function extractLastLine(text: string, maxLen: number = 35): string {
   let line = lines[lines.length - 1]?.trim() || "";
   if (line.length < 8 && lines.length >= 2) {
     line = lines[lines.length - 2]?.trim() || "";
-  } 
-  return line.length > maxLen ? line.slice(0, maxLen) + "..." : line + ".." ;
+  }
+  return line.length > maxLen ? line.slice(0, maxLen) + "..." : line + "..";
 }
 
 // ============================================
@@ -720,6 +722,63 @@ class SessionStore {
             break;
           }
 
+          case "browser_action_required": {
+            const requestId = event.request_id || "";
+            const action = event.action || "";
+            const payload = event.payload || {};
+
+            // One-off listener to catch the response from the extension
+            const listener = async (msgEvent: MessageEvent) => {
+              if (msgEvent.data?.type === 'VIBEWORKER_EXTENSION_RESPONSE') {
+                const responseMap = msgEvent.data.payload || {};
+
+                if (action === "OPEN" && responseMap?.tabId) {
+                  const tabs = this.getState(sessionId).agentTabs;
+                  this.updateSession(sessionId, { agentTabs: [...tabs, responseMap.tabId] });
+                }
+
+                try {
+                  await sendBrowserCallback(requestId, responseMap);
+                } catch (e) {
+                  console.error("Failed to send browser callback", e);
+                }
+                window.removeEventListener('message', listener);
+              }
+            };
+            window.addEventListener('message', listener);
+
+            let extAction = action;
+            const currentTabs = this.getState(sessionId).agentTabs;
+            const activeTabId = currentTabs.length > 0 ? currentTabs[currentTabs.length - 1] : undefined;
+
+            if (action === "OPEN") {
+              const mode = localStorage.getItem("vibeworker_browser_mode") || "OPEN_TAB";
+              extAction = mode;
+            } else if (action === "READ") {
+              extAction = "EXTRACT_CONTENT";
+              payload.tabId = activeTabId;
+            } else if (action === "TYPE" || action === "CLICK") {
+              extAction = "EXECUTE_ACTION";
+              payload.domAction = action.toLowerCase();
+              payload.tabId = activeTabId;
+            } else if (action === "CLOSE") {
+              extAction = "CLOSE_TAB";
+              payload.tabId = activeTabId;
+              this.updateSession(sessionId, { agentTabs: currentTabs.slice(0, -1) });
+            }
+
+            if (!payload.tabId && action !== "OPEN") {
+              console.warn("Attempting to perform browser action without an active tab.");
+            }
+
+            // Small delay to ensure extension is ready if we just opened it (handled by extension typically, but safe here)
+            window.postMessage({
+              type: 'VIBEWORKER_EXTENSION_REQUEST',
+              payload: { action: extAction, ...payload }
+            }, '*');
+            break;
+          }
+
           case "done":
             break;
 
@@ -829,6 +888,19 @@ class SessionStore {
     }
 
     this.abortControllers.delete(sessionId);
+
+    // Auto-cleanup opened browser tabs at the end of the session
+    const currentTabs = finalState.agentTabs || [];
+    if (currentTabs.length > 0) {
+      currentTabs.forEach(tabId => {
+        window.postMessage({
+          type: 'VIBEWORKER_EXTENSION_REQUEST',
+          payload: { action: 'CLOSE_TAB', tabId }
+        }, '*');
+      });
+      // Clear the tracker
+      this.updateSession(sessionId, { agentTabs: [] });
+    }
 
     // 流结束后回调（LLM 标题生成等）
     if (isFirstMessage && this.onFirstMessageCallback) {

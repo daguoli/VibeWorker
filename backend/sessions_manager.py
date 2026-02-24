@@ -159,6 +159,16 @@ class SessionManager:
         session_data = self.get_session_data(session_id)
         existing = session_data.get("debug_calls", [])
         existing.extend(debug_calls)
+        
+        # 确保按时间戳升序排序，防止在不同模块 (如 app.py 和 middleware) 异步保存时顺序错乱
+        def _get_ts(call):
+            ts = call.get("timestamp")
+            if not ts:
+                return "1970-01-01T00:00:00"
+            return ts
+            
+        existing.sort(key=_get_ts)
+        
         session_data["debug_calls"] = existing
         self._write_session_data(session_id, session_data)
 

@@ -281,6 +281,61 @@ async def stream_graph_events(
             input_data_msg = data.get("input", {})
             input_messages = _serialize_debug_messages(input_data_msg)
             full_input = _format_debug_input(input_messages)
+
+            # 提取 Model Config 并将其置于最初始的位置
+            try:
+                model_config = {
+                    "provider": metadata.get("ls_provider", "unknown"),
+                    "model_name": metadata.get("ls_model_name", "unknown"),
+                    "temperature": metadata.get("ls_temperature"),
+                    "max_tokens": metadata.get("ls_max_tokens"),
+                }
+                # 过滤掉 None 值的项以保持清爽
+                model_config = {k: v for k, v in model_config.items() if v is not None}
+                
+                import json
+                config_str = json.dumps(model_config, ensure_ascii=False, indent=2)
+                full_input = f"[Model Config]\n{config_str}\n---\n" + full_input
+            except Exception as e:
+                logger.debug(f"Failed to extract model config for debug: {e}")
+
+            # 提取 tools schema 并追加到 debug input 中，以便前端能看到消耗了 token 的工具定义
+            tools = []
+            configurable = config.get("configurable", {})
+            if node == "agent":
+                tools = configurable.get("agent_tools", [])
+            elif node == "executor":
+                tools = configurable.get("executor_tools", [])
+                
+            if tools:
+                import json
+                try:
+                    # 工具对象可能是 BaseTool 或 dict，尝试转换
+                    def _serialize_tool(t):
+                        if hasattr(t, "name") and hasattr(t, "description") and hasattr(t, "args_schema"):
+                            # Langchain BaseTool
+                            schema = t.args_schema.schema() if hasattr(t.args_schema, "schema") else {}
+                            return {"type": "function", "function": {"name": t.name, "description": t.description, "parameters": schema}}
+                        elif isinstance(t, dict):
+                            return t
+                        return str(t)
+                        
+                    serialized_tools = [_serialize_tool(t) for t in tools]
+                    tools_str = json.dumps(serialized_tools, ensure_ascii=False, indent=2, default=lambda o: str(o))
+                    tools_block = f"\n---\n[Tools]\n{tools_str}\n---\n"
+                    
+                    # 尝试将 Tools 插在 HumanMessage 之前，如果找不到 HumanMessage 则追加在末尾
+                    human_msg_idx = full_input.rfind("\n[HumanMessage]\n")
+                    if human_msg_idx == -1:
+                        human_msg_idx = full_input.rfind("[HumanMessage]\n")
+                        
+                    if human_msg_idx != -1:
+                        full_input = full_input[:human_msg_idx] + tools_block + full_input[human_msg_idx:]
+                    else:
+                        full_input += tools_block
+                except Exception as e:
+                    logger.debug(f"Failed to serialize tools for debug: {e}")
+
             debug_tracking[run_id] = {
                 "start_time": time.time(),
                 "node": node,

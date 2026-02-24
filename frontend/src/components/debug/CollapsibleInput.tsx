@@ -80,8 +80,8 @@ function parseSystemPromptSections(content: string): Section[] {
 // 解析消息列表：[SystemMessage], [HumanMessage], [AIMessage] 等
 function parseTopLevelSections(input: string): Section[] {
   const sections: Section[] = [];
-  // 匹配 [XXXMessage] 格式
-  const regex = /\[(\w+Message)\]\s*\n/g;
+  // 匹配 [XXXMessage] 或 [Tools] 或 [Model Config] 等格式
+  const regex = /\[([A-Za-z0-9_ ]+)\]\s*\n/g;
   const matches = [...input.matchAll(regex)];
 
   if (matches.length === 0) {
@@ -151,6 +151,7 @@ function SectionItem({ section, defaultExpanded = false, depth = 0 }: SectionIte
   const labelColorMap: Record<string, string> = {
     // 顶层
     "System Prompt": "bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300",
+    "Model Config": "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300",
     "Messages": "bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300",
     "Instruction": "bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300",
     // System Prompt 子段落
@@ -167,6 +168,7 @@ function SectionItem({ section, defaultExpanded = false, depth = 0 }: SectionIte
     "AIMessage": "bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300",
     "SystemMessage": "bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300",
     "ToolMessage": "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300",
+    "Tools": "bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-300",
   };
 
   const labelClass = labelColorMap[section.label] || "bg-muted text-muted-foreground";

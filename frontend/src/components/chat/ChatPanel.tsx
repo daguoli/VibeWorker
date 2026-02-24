@@ -749,6 +749,7 @@ export default function ChatPanel({
                             target.style.height = Math.min(target.scrollHeight, 128) + "px";
                         }}
                     />
+
                     {isStreaming ? (
                         <Button
                             variant="ghost"

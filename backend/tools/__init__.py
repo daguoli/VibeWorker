@@ -8,6 +8,7 @@ from tools.rag_tool import create_rag_tool
 from tools.memory_write_tool import create_memory_write_tool
 from tools.memory_search_tool import create_memory_search_tool
 from tools.plan_tool import create_plan_create_tool
+from tools.browser_tools import get_browser_tools
 
 __all__ = [
     "create_terminal_tool",
@@ -34,7 +35,7 @@ def _get_core_tools() -> list:
         create_rag_tool(),
         create_memory_write_tool(),
         create_memory_search_tool(),
-    ]
+    ] + get_browser_tools()
 
 
 def _append_mcp_tools(tools: list) -> list:

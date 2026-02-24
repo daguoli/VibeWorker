@@ -600,6 +600,27 @@ async def security_status():
 
 
 # ============================================
+# 浏览器扩展回调端点
+# ============================================
+class BrowserCallbackRequest(BaseModel):
+    request_id: str
+    result: dict
+
+@app.post("/api/browser/callback")
+async def browser_callback(request: BrowserCallbackRequest):
+    """
+    Resolve a pending browser action request from the frontend extension integration.
+    """
+    from tools.browser_tools import browser_gate
+    resolved = browser_gate.resolve_callback(request.request_id, request.result)
+    if resolved:
+        return {"status": "ok", "request_id": request.request_id}
+    else:
+        logger.warning(f"Browser callback request {request.request_id} not found or expired")
+        return {"status": "expired", "request_id": request.request_id}
+
+
+# ============================================
 # Docker 检测端点
 # ============================================
 @app.get("/api/docker/check")

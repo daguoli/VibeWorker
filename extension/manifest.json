@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "VibeWorker Extension",
+  "version": "0.1.0",
+  "description": "An extension to allow VibeWorker to interact with the browser.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "notifications",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://localhost:*/*",
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:*/*"
+      ],
+      "js": [
+        "content-bridge.js"
+      ]
+    }
+  ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:*/*"
+    ]
+  },
+  "action": {
+    "default_title": "VibeWorker Extension"
+  }
+}

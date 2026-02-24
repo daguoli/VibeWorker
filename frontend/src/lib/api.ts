@@ -142,7 +142,7 @@ export interface DebugPhase {
 export type DebugCall = DebugLLMCall | DebugToolCall | DebugDivider | DebugPhase;
 
 export interface SSEEvent {
-  type: "token" | "tool_start" | "tool_end" | "llm_start" | "llm_end" | "done" | "error" | "approval_request" | "plan_created" | "plan_updated" | "plan_revised" | "plan_approval_request" | "debug_llm_call" | "phase";
+  type: "token" | "tool_start" | "tool_end" | "llm_start" | "llm_end" | "done" | "error" | "approval_request" | "plan_created" | "plan_updated" | "plan_revised" | "plan_approval_request" | "debug_llm_call" | "phase" | "browser_action_required";
   content?: string;
   tool?: string;
   input?: string;
@@ -159,6 +159,9 @@ export interface SSEEvent {
   // Approval request fields
   request_id?: string;
   risk_level?: "safe" | "warn" | "dangerous" | "blocked";
+  // Browser Action fields
+  action?: string;
+  payload?: any;
   // Plan fields
   plan?: Plan;        // plan_created event
   plan_id?: string;   // plan_updated / plan_revised / plan_approval_request event
@@ -505,6 +508,21 @@ export async function sendPlanApproval(
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.detail || "Failed to send plan approval");
+  }
+}
+
+export async function sendBrowserCallback(
+  requestId: string,
+  result: any
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/browser/callback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ request_id: requestId, result: result }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Failed to send browser callback");
   }
 }
 
