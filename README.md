@@ -38,6 +38,7 @@ VibeWorker is a lightweight, local-first AI Agent system built with Python. It f
 - **Skills Store** — Browse, search, and install 500+ community skills from [skills.sh](https://skills.sh/)
 - **MCP Integration** — Connect to any MCP Server and dynamically inject tools into the agent
 - **Two-tier Cache** — L1 in-memory + L2 disk cache, delivering 10–100x faster responses and significant API cost savings
+- **Browser Automation Extension** — Native Chrome/Edge extension for direct DOM interaction, content extraction, and page navigation
 - **Security Sandbox** — Security gate, tool approval, audit logging, rate limiting, and optional Docker isolation
 - **Data Isolation** — User data lives in `~/.vibeworker/`, completely separate from source code
 - **Full Transparency** — Every prompt assembly, tool call, and memory operation is fully observable
@@ -254,6 +255,20 @@ def my_tool(query: str) -> str:
     # Your tool logic
     return result
 ```
+
+## Browser Extension
+
+VibeWorker includes a native browser extension to give the agent direct control over your browser for complex web tasks:
+
+- **DOM Interactions**: Click elements, type text, and submit forms on your behalf
+- **Content Extraction**: Extract clean markdown and structures directly from the current tab
+- **Tab Management**: Open, close, and navigate tabs automatically
+- **Seamless Upgrade**: Integrated version checking and UI alerts for new extension versions
+
+**Installation**:
+1. Open `chrome://extensions/` or `edge://extensions/`
+2. Enable **Developer mode**
+3. Click **Load unpacked** and select the `/extension` directory in your local VibeWorker project
 
 ## Security
 
