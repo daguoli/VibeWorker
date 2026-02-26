@@ -367,10 +367,10 @@ export default function HomePage() {
                   }
                 }}
                 className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium transition-colors ${!isExtensionOnline
-                    ? "text-destructive bg-destructive/10 cursor-pointer hover:bg-destructive/20 animate-pulse"
-                    : extensionVersion && extensionVersion < EXPECTED_EXTENSION_VERSION
-                      ? "text-amber-600 bg-amber-50 cursor-pointer hover:bg-amber-100 animate-pulse"
-                      : "text-green-600 bg-green-50"
+                  ? "text-destructive bg-destructive/10 cursor-pointer hover:bg-destructive/20 animate-pulse"
+                  : extensionVersion && extensionVersion < EXPECTED_EXTENSION_VERSION
+                    ? "text-amber-600 bg-amber-50 cursor-pointer hover:bg-amber-100 animate-pulse"
+                    : "text-green-600 bg-green-50"
                   }`}
               >
                 <Puzzle className="w-3 h-3" />

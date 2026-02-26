@@ -26,22 +26,72 @@ class MCPManager:
 
     def __init__(self) -> None:
         self._connections: dict[str, dict[str, Any]] = {}
-        # Stores per-server: { session, exit_stack, tools, lc_tools, status, error }
+        # 存储每个 server 的连接状态：{ session, exit_stack, tools, lc_tools, status, error }
         self._lock = asyncio.Lock()
+        # 后台初始化任务引用（需持有引用，防止被 GC 回收）
+        self._init_task: asyncio.Task | None = None
+
+    def start_background_init(self) -> None:
+        """非阻塞启动 MCP 初始化，立即返回，不阻塞主服务器启动。
+
+        在事件循环中创建后台 Task，并行连接所有启用的 MCP 服务器。
+        初始化期间 get_all_mcp_tools() 会随连接完成逐步返回更多工具，
+        单个服务器失败只影响该服务器，不影响其他服务器或主服务。
+        """
+        self._init_task = asyncio.create_task(
+            self._background_initialize(),
+            name="mcp-background-init",
+        )
+
+    async def _background_initialize(self) -> None:
+        """后台并行连接所有启用的 MCP 服务器。
+
+        使用 asyncio.gather 并行发起连接，各服务器相互隔离：
+        任意一个挂起或失败都不会影响其他服务器的连接流程。
+        """
+        config = get_active_config()
+        servers = config.get("servers", {})
+        enabled = [name for name, cfg in servers.items() if cfg.get("enabled", True)]
+        if not enabled:
+            return
+
+        logger.info(f"MCP 后台初始化：并行连接 {len(enabled)} 个服务器...")
+        # return_exceptions=True 确保单个失败不会中断其他并发连接
+        await asyncio.gather(
+            *[self._safe_connect(name) for name in enabled],
+            return_exceptions=True,
+        )
+        connected = sum(
+            1 for n in enabled
+            if self._connections.get(n, {}).get("status") == STATUS_CONNECTED
+        )
+        logger.info(f"MCP 后台初始化完成：{connected}/{len(enabled)} 个服务器已连接")
+
+    async def _safe_connect(self, name: str) -> None:
+        """带完整错误捕获的单服务器连接，供 gather 并行调用。"""
+        try:
+            await self.connect_server(name)
+        except Exception as e:
+            logger.error(f"MCP server '{name}' 连接失败（已跳过）: {e}")
 
     async def initialize(self) -> None:
-        """Connect to all enabled MCP servers on startup."""
+        """串行连接所有启用的 MCP 服务器（供 API 手动触发使用）。"""
         config = get_active_config()
         servers = config.get("servers", {})
         for name, srv_config in servers.items():
             if srv_config.get("enabled", True):
-                try:
-                    await self.connect_server(name)
-                except Exception as e:
-                    logger.error(f"Failed to connect MCP server '{name}': {e}")
+                await self._safe_connect(name)
 
     async def shutdown(self) -> None:
-        """Disconnect all MCP servers gracefully."""
+        """断开所有 MCP 服务器，并取消尚未完成的后台初始化任务。"""
+        # 如果后台初始化还在进行，先取消它，避免 shutdown 与 connect 并发冲突
+        if self._init_task and not self._init_task.done():
+            self._init_task.cancel()
+            try:
+                await self._init_task
+            except asyncio.CancelledError:
+                logger.info("MCP 后台初始化任务已取消")
+
         names = list(self._connections.keys())
         for name in names:
             try:
@@ -71,6 +121,9 @@ class MCPManager:
 
         try:
             transport = srv_config.get("transport", "stdio")
+            # stdio 类型进程可能因环境问题挂起，SSE 类型可能因网络延迟挂起，
+            # 超时时间根据传输方式区分：stdio 默认 15s，SSE 默认 10s
+            connect_timeout = 15.0 if transport == "stdio" else 10.0
             exit_stack = AsyncExitStack()
 
             if transport == "stdio":
@@ -80,11 +133,24 @@ class MCPManager:
             else:
                 raise ValueError(f"Unknown transport: {transport}")
 
-            # Initialize the session
-            await session.initialize()
+            # Initialize the session（加超时保护：防止 MCP 进程挂起导致整个启动阻塞）
+            try:
+                await asyncio.wait_for(session.initialize(), timeout=connect_timeout)
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"MCP server '{name}' 握手超时（{connect_timeout:.0f}s），"
+                    "可能是进程挂起或网络不通，已跳过此服务器"
+                )
 
-            # Discover tools
-            tools_result = await session.list_tools()
+            # Discover tools（同样加超时：防止 list_tools 阶段挂起）
+            try:
+                tools_result = await asyncio.wait_for(
+                    session.list_tools(), timeout=connect_timeout
+                )
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"MCP server '{name}' 工具列表获取超时（{connect_timeout:.0f}s），已跳过"
+                )
             mcp_tools = tools_result.tools if hasattr(tools_result, "tools") else []
 
             # Wrap as LangChain tools

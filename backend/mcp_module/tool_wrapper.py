@@ -2,14 +2,60 @@
 import hashlib
 import json
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 from langchain_core.tools import StructuredTool
+from pydantic import BaseModel, Field, create_model
 
 if TYPE_CHECKING:
     from mcp import ClientSession
 
 logger = logging.getLogger(__name__)
+
+
+def _json_type_to_python(json_type: str) -> type:
+    """将 JSON Schema 类型字符串映射到对应的 Python 类型。"""
+    type_map: dict[str, type] = {
+        "string": str,
+        "integer": int,
+        "number": float,
+        "boolean": bool,
+        "array": list,
+        "object": dict,
+    }
+    return type_map.get(json_type, Any)
+
+
+def _build_args_schema(tool_name: str, input_schema: dict) -> type[BaseModel]:
+    """根据 MCP inputSchema 动态构建 Pydantic 模型，用作 StructuredTool 的 args_schema。
+
+    将 JSON Schema 的 properties/required 转换为 Pydantic 字段定义，
+    使 LangChain / LangGraph 能正确生成传给 LLM 的工具调用参数规范。
+    相比事后赋值 tool.schema_ 的方式，此方法兼容 Pydantic v2 严格模式。
+    """
+    properties = input_schema.get("properties", {})
+    required_fields = set(input_schema.get("required", []))
+
+    if not properties:
+        # 无参数工具：返回空模型
+        return create_model(f"{tool_name}Args")
+
+    field_definitions: dict[str, Any] = {}
+    for field_name, field_schema in properties.items():
+        py_type = _json_type_to_python(field_schema.get("type", "string"))
+        description = field_schema.get("description", "")
+
+        if field_name in required_fields:
+            # 必填字段：不设默认值
+            field_definitions[field_name] = (py_type, Field(description=description))
+        else:
+            # 可选字段：默认为 None
+            field_definitions[field_name] = (
+                Optional[py_type],
+                Field(default=None, description=description),
+            )
+
+    return create_model(f"{tool_name}Args", **field_definitions)
 
 
 def _get_mcp_tool_cache(tool_name: str):
@@ -65,8 +111,9 @@ def mcp_tool_to_langchain(
     lc_tool_name = f"mcp_{server_name}_{mcp_tool_name}"
     description = tool_info.description or f"MCP tool: {mcp_tool_name}"
 
-    # Build JSON Schema for LangChain from MCP inputSchema
+    # 从 MCP inputSchema 构建 Pydantic 模型，供 LangChain 生成工具调用参数规范
     input_schema = tool_info.inputSchema or {"type": "object", "properties": {}}
+    args_schema_model = _build_args_schema(lc_tool_name, input_schema)
 
     # Create per-tool cache (L1 memory + L2 disk)
     l1_cache, l2_cache = _get_mcp_tool_cache(lc_tool_name)
@@ -113,20 +160,14 @@ def mcp_tool_to_langchain(
             logger.error(f"MCP tool call failed ({lc_tool_name}): {e}")
             return f"Error calling MCP tool: {e}"
 
+    # 通过正规 args_schema 传入动态构建的 Pydantic 模型，
+    # 兼容 Pydantic v2 严格模式，避免事后赋值非标准属性导致的 AttributeError
     tool = StructuredTool.from_function(
         coroutine=_call_mcp_tool,
         name=lc_tool_name,
         description=description,
-        args_schema=None,  # We pass raw JSON schema below
+        args_schema=args_schema_model,
     )
-
-    # Override the args_schema with raw JSON schema dict so LangChain uses it
-    # for generating the tool spec sent to the LLM.
-    tool.args_schema = None
-    tool.args = input_schema.get("properties", {})
-
-    # Store the full JSON schema so LangGraph can use it
-    tool.schema_ = input_schema
 
     return tool
 

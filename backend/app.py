@@ -79,14 +79,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Security module initialization failed (non-fatal): {e}")
 
-    # Initialize MCP servers
+    # 非阻塞启动 MCP 初始化：后台并行连接所有服务器，不阻塞主服务器启动。
+    # 即使所有 MCP 均失败，后端和前端仍可正常使用，MCP 工具会在连接就绪后自动可用。
     if settings.mcp_enabled:
         try:
             from mcp_module import mcp_manager
-            await mcp_manager.initialize()
-            logger.info("MCP module initialized")
+            mcp_manager.start_background_init()
+            logger.info("MCP module: 后台初始化已启动")
         except Exception as e:
-            logger.warning(f"MCP initialization failed (non-fatal): {e}")
+            logger.warning(f"MCP module failed to start background init: {e}")
 
     # 每日首次启动获取 OpenRouter 定价数据
     try:

@@ -122,6 +122,21 @@ start_frontend() {
     fi
 
     log_info "启动前端服务..."
+
+    # 检测项目路径是否含非 ASCII 字符（如中文）
+    # Next.js 16 默认启用 Turbopack，且无法通过命令行参数关闭，
+    # 而 Turbopack 对非 ASCII 路径（如中文目录）存在已知 Bug，会导致前端启动失败。
+    # 唯一可靠的解决方案是将项目放在纯 ASCII 路径下。
+    if echo "$FRONTEND_DIR" | LC_ALL=C grep -q '[^ -~]'; then
+        log_warn "=========================================================="
+        log_warn "  [警告] 检测到项目路径含有非 ASCII 字符（如中文）："
+        log_warn "  $FRONTEND_DIR"
+        log_warn "  Next.js 16 默认使用 Turbopack，其对非 ASCII 路径"
+        log_warn "  存在已知 Bug，可能导致前端无法启动。"
+        log_warn "  请将项目移至纯英文路径（如 ~/Projects/VibeWorker）。"
+        log_warn "=========================================================="
+    fi
+
     cd "$FRONTEND_DIR"
 
     if [[ ! -d "node_modules" ]]; then
