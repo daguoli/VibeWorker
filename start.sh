@@ -59,11 +59,34 @@ start_backend() {
     elif [[ -f ".venv/bin/activate" ]]; then
         source .venv/bin/activate
     else
-        log_info "未检测到虚拟环境，正在创建 venv..."
+        log_info "未检测到虚拟环境，正在检查 Python 环境..."
+        
+        local py_cmd=""
         if command -v python3 &>/dev/null; then
-            python3 -m venv venv
+            py_cmd="python3"
+        elif command -v python &>/dev/null; then
+            py_cmd="python"
         else
-            python -m venv venv
+            log_error "系统未安装 Python！VibeWorker 后端需要 Python 3.10 或更高版本。"
+            log_error "请先前往安装: https://www.python.org/downloads/"
+            return 1
+        fi
+
+        # 检查 Python 版本是否在 3.10 ~ 3.13 之间
+        local py_version_ok=$($py_cmd -c "import sys; v=sys.version_info[:2]; print('1' if (3,10)<=v<=(3,13) else '0')" 2>/dev/null)
+        if [[ "$py_version_ok" != "1" ]]; then
+            local installed_version=$($py_cmd -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>/dev/null)
+            log_error "Python 版本不兼容 ($installed_version)! VibeWorker 后端仅支持 Python 3.10 ~ 3.13 之间的版本。"
+            log_error "请安装或切换至符合要求的 Python 环境后再试。"
+            return 1
+        fi
+
+        log_info "正在使用 $py_cmd 创建 venv 虚拟环境..."
+        $py_cmd -m venv venv
+        
+        if [ $? -ne 0 ]; then
+            log_error "虚拟环境创建失败！您可能缺少 venv 模块 (例如在 Ubuntu 需执行: sudo apt install python3-venv)"
+            return 1
         fi
         
         if [[ -f "venv/Scripts/activate" ]]; then

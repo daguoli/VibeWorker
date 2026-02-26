@@ -35,8 +35,31 @@ if exist "venv\Scripts\activate.bat" (
 ) else if exist ".venv\Scripts\activate.bat" (
     call .venv\Scripts\activate.bat
 ) else (
-    echo [INFO] 未检测到虚拟环境，正在创建 venv...
+    echo [INFO] 未检测到虚拟环境，正在检查 Python 环境...
+    
+    where python >nul 2>nul
+    if ERRORLEVEL 1 (
+        echo [ERROR] 系统未检测到 Python 命令！
+        echo [ERROR] VibeWorker 后端需要 Python 3.10 或更高版本。
+        echo [ERROR] 请前往 https://www.python.org/downloads/ 下载并安装，确保安装时勾选了 "Add Python to PATH" 选项。
+        exit /b 1
+    )
+
+    python -c "import sys; v=sys.version_info[:2]; sys.exit(0 if (3, 10) <= v <= (3, 13) else 1)" >nul 2>nul
+    if ERRORLEVEL 1 (
+        echo [ERROR] Python 版本不兼容！VibeWorker 后端目前仅支持 Python 3.10 ~ 3.13 之间的版本。
+        python --version
+        echo [ERROR] 请安装符合要求的 Python 版本或将其设置到您的系统环境变量靠前的位置。
+        exit /b 1
+    )
+    
+    echo [INFO] 检查完毕，正在创建 venv 虚拟环境...
     python -m venv venv
+    if ERRORLEVEL 1 (
+        echo [ERROR] 创建虚拟环境失败！
+        exit /b 1
+    )
+    
     call venv\Scripts\activate.bat
     echo [INFO] 正在安装后端依赖，这可能需要一些时间...
     python -m pip install --upgrade pip
